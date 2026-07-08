@@ -51,7 +51,7 @@ This is a post-hackathon scaffold. The goal is a working end-to-end loop, not a 
 Birdie has one core service (trace/lesson storage + business rules: quote verification, playbook-alignment bookkeeping, role-filtered queries) exposed through two thin transports:
 
 - **MCP server** (primary) — tools for capture, extraction, review, promotion, and the two ask queries. Used by chatting with any MCP-capable client (Claude Code, Claude Desktop, Codex CLI, etc.) that has Birdie registered as a plugin. This is the "AI" in "AI plugin": Birdie itself calls no LLM — the connected host's model reads tool output and reasons about it, then calls a `save_*` tool to persist its answer.
-- **REST API + minimal web UI** (secondary) — pure data operations only: capture a trace, browse/edit the review queue, browse the library. No AI reasoning happens over REST, because there's no MCP host on the other end to supply a model. Useful for a quick browser-based capture form or a wider review/library view than a chat window comfortably shows.
+- **REST API + minimal web UI** (secondary) — pure data operations only: capture a trace, browse/edit the review queue. No AI reasoning happens over REST, because there's no MCP host on the other end to supply a model. One page, two parts (§4.2) — not a multi-screen app.
 
 ```
 Capture (before/after text pair, role, junior/senior names)
@@ -82,6 +82,15 @@ npx birdie          # both, sharing the same SQLite file at DB_PATH
 
 Both modes read/write the same `DB_PATH` file, so a lesson captured via chat (MCP) shows up immediately in the browser Review queue, and a lesson reviewed in the browser is immediately visible to the next `ask_*` call in chat. "Deployed as a small shared service" (§2) — multiple people pointed at one non-local database — is a later extension of the same repository interface, not part of this build.
 
+### 4.2 Web UI: one page, two parts
+
+The web UI is a single page, not a multi-screen app — no routing, no tabs. Two parts stacked on one screen:
+
+1. **Capture** — a compact form at the top: before/after text, submitted-by name/role, junior/senior names, optional playbook ref/text. Submitting posts to `POST /traces` and clears the form.
+2. **Review** — everything below it: the list of `pending_review` lessons, each rendered as the lesson card (§7.1) with editable fields, a typology field, a playbook-divergence banner when it applies, and Confirm & Promote / Reject actions. This is the answer to "things to review, to decide if they should be admitted as a lesson" — the one job this page does.
+
+There is no separate browsable "Library" screen in v1. Promoted lessons are queryable — via `GET /lessons?status=promoted` over REST, or the `ask_*` MCP tools in chat (§7.4) — but the web UI itself only shows what still needs a decision. Keeps the UI to exactly the two things a reviewer actually does at their desk: add a trace, clear the queue.
+
 ### Repo layout
 
 ```
@@ -108,12 +117,10 @@ birdie/
 │  └─ .env.example
 ├─ web/
 │  ├─ src/
-│  │  ├─ pages/
-│  │  │  ├─ Capture.tsx
-│  │  │  ├─ Review.tsx
-│  │  │  └─ Library.tsx
+│  │  ├─ CaptureForm.tsx       part 1 of the single page (§4.2)
+│  │  ├─ ReviewList.tsx        part 2 of the single page (§4.2)
 │  │  ├─ api.ts
-│  │  └─ App.tsx
+│  │  └─ App.tsx                renders CaptureForm + ReviewList, no routing
 │  ├─ package.json
 │  └─ vite.config.ts
 ├─ skills/
@@ -259,9 +266,9 @@ Review queue (`GET /lessons?status=pending_review` over REST, or the `list_lesso
 
 Promotion only accepts lessons with `status='pending_review'` (rejects `rejected` or already-`promoted` lessons) — nothing reaches either audience without going through this step, and it always requires a `reviewer` name. Enforced in code, not just convention.
 
-### 7.3 Library
+### 7.3 Promoted lessons (queryable, not a web screen)
 
-`GET /lessons?status=promoted` (REST) — the full reviewed pool, browsable without going through an MCP host. Each result renders the lesson card (§7.1), plus typology, playbook alignment, and the trace's `junior_name` / `senior_name` as read-only badges. Filterable by `typology`, `playbook_ref`, `junior_name`, `senior_name`. No full-text search in v1 beyond SQLite `LIKE` on the card text — enough for scaffold volumes, swap for FTS5 later if needed. Read-only in the web UI — corrections happen by editing the underlying lesson before it's promoted, not after.
+`GET /lessons?status=promoted` (REST) — the full reviewed pool. Each result carries the lesson card (§7.1) plus typology, playbook alignment, and the trace's `junior_name` / `senior_name`. Filterable by `typology`, `playbook_ref`, `junior_name`, `senior_name`. No full-text search in v1 beyond SQLite `LIKE` — enough for scaffold volumes, swap for FTS5 later if needed. This endpoint exists for the `ask_*` tools (§7.4) and for anyone who wants to query it directly; the web UI (§4.2) doesn't add a browsing screen for it — corrections happen by editing the underlying lesson before it's promoted, not after.
 
 ### 7.4 Ask: two audiences over the same promoted pool
 
@@ -383,7 +390,7 @@ No end-to-end or UI test suite in v1; manual verification of the capture → ext
 4. `ask_senior_approach` + `ask_junior_struggles` MCP tools.
 5. Domain profile loader (`domain.md` parsing for the `# Typology` category list, used by `save_extraction` validation) + MCP prompts (`extract-lesson`, `ask-senior-approach`, `ask-junior-struggles`) that inject the profile as context (§6.1, §8.3, §9.1).
 6. REST API mirroring the data-only operations (`traces`, `lessons` routes) for the web UI.
-7. Web UI: Capture screen → Review screen → Library screen, wired to the REST API.
+7. Web UI: one page, `CaptureForm` + `ReviewList` (§4.2), wired to the REST API.
 8. `skills/birdie-mentor/SKILL.md` — thin Claude Code wrapper over the same tools/prompts.
 9. Unit tests for quote verification + `save_extraction` input validation.
 10. README with setup/run instructions, including how to register Birdie as an MCP server in Claude Code / Claude Desktop / Codex CLI.
