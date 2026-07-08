@@ -26,6 +26,7 @@ This is a post-hackathon scaffold. The goal is a working end-to-end loop, not a 
 - Capture a before/after edit pair as a **trace**, tagged with who submitted it and their role (`senior` | `junior`), plus which senior and which junior the situation involves.
 - Let the connected AI assistant extract a candidate **lesson** from a trace: the quoted text that changed, a summary of the change, a guessed reason it matters, and a guessed **typology** (what kind of change this is).
 - If a firm playbook excerpt is supplied, flag whether the edit **aligns with or diverges from** the playbook, and say so outright when it diverges.
+- Make the taxonomy and "what's worth capturing" judgment **editable per domain**: Birdie isn't law-specific. A single markdown file (§6.1) lets each team — law, audit, tax, software, anything — define their own typology categories and mentorship-worthy criteria without touching code. Not every trace should become a lesson; the assistant can decide to skip one.
 - Require a senior to **review and confirm** (or edit, or reject) every AI guess before it becomes a lesson.
 - Split promoted lessons by audience: **juniors can ask how a senior (or seniors in general) handled a similar issue**; **seniors can ask what a specific junior (or juniors in general) are struggling with**. Only promoted (reviewed) lessons feed either query — review is mandatory for both audiences, not a single undifferentiated "shared library."
 - Support **bring-your-own-model** natively, not via provider config: Birdie is an MCP server with zero LLM API calls and zero model credentials. Whatever model is already running the connected client does the reasoning when it calls Birdie's tools. Swapping models means swapping which MCP host you're using, not reconfiguring Birdie.
@@ -118,6 +119,7 @@ birdie/
 ├─ skills/
 │  └─ birdie-mentor/
 │     └─ SKILL.md              thin Claude Code wrapper over the MCP tools/prompts (§9.1) — optional, not required for functionality
+├─ domain.md                    editable domain profile (§6.1) — ships with a legal example, meant to be replaced per-firm
 ├─ docs/
 │  └─ superpowers/specs/
 ├─ package.json                npm workspaces root (dev script runs REST+web; separate script runs the MCP server)
@@ -142,7 +144,8 @@ playbook_ref        (text, nullable)    e.g. "NDA §4.3"
 playbook_text       (text, nullable)    pasted excerpt used for divergence check
 context_note        (text, nullable)    free-text context from the submitter
 source              (text)              'manual' | 'upload' | 'api', default 'manual'
-status              (text)              'captured' | 'extracted'
+status              (text)              'captured' | 'extracted' | 'skipped'
+skip_reason         (text, nullable)    set when status='skipped' (§6.1)
 created_at          (timestamp)
 ```
 
@@ -157,7 +160,7 @@ quote               (text)              verbatim excerpt, must appear in before_
 quote_verified      (boolean)           substring-match result, computed in code
 what_changed        (text)              assistant's summary of the diff
 why_it_matters      (text)              assistant's reasoning guess
-typology            (text)              'playbook_compliance' | 'editorial_style' | 'substantive_risk' | 'clarity_precision' | 'other'
+typology            (text)              free text, validated against the active domain profile's categories (§6.1) — not a fixed enum
 playbook_alignment  (text, nullable)    'aligned' | 'diverges' | 'not_applicable'
 playbook_note       (text, nullable)    assistant's explanation of alignment/divergence
 status              (text)              'pending_review' | 'rejected' | 'promoted'
@@ -176,14 +179,34 @@ No separate `citations` table in v1 (unlike the LexCatalyst RFC) — `playbook_r
 There is no extraction service inside Birdie — no LLM API call, no provider config. Extraction happens when a user chats with their MCP-connected assistant and asks it to process a trace. The assistant:
 
 1. Calls the `get_trace` tool to read `before_text`, `after_text`, and `playbook_text` (if any).
-2. Reasons about the diff itself — this is the assistant's own model doing the work, whichever one that is.
-3. Calls the `save_extraction` tool with its answer: `{ trace_id, quote, what_changed, why_it_matters, typology, playbook_alignment?, playbook_note? }`. The tool's input schema documents the required shape and the fixed `typology` enum, so any connected model is guided the same way regardless of which one it is.
+2. Judges whether this trace is actually **mentorship-worthy**, using the "what counts as mentorship-worthy" guidance from the domain profile (§6.1) — not every edit is a teachable moment; a typo fix or pure reformat isn't. If not, it calls `skip_extraction` with a short reason instead of forcing a lesson out of nothing.
+3. If it is worth capturing, reasons about the diff itself — this is the assistant's own model doing the work, whichever one that is — using the domain profile's typology categories (§6.1).
+4. Calls the `save_extraction` tool with its answer: `{ trace_id, quote, what_changed, why_it_matters, typology, playbook_alignment?, playbook_note? }`. The tool's input schema documents the required shape; `typology` is validated against whatever categories are currently listed in the domain profile, so any connected model is guided the same way regardless of which one it is.
 
-### 6.1 Typology taxonomy
+### 6.1 Domain profile
 
-The five `typology` values are defined once here and reused by the `extract-lesson` MCP prompt (§9.1) and by `save_extraction`'s validation — a single canonical definition, not left to each model's own judgment:
+Birdie isn't law-specific. What counts as a "playbook," what typology categories make sense, and what's even mentorship-worthy varies by field — a software team's code-review lessons look nothing like a tax practice's or an audit team's. Rather than hardcode a taxonomy, Birdie reads a **domain profile**: a single markdown file the firm or team edits themselves, no code changes required.
 
-| Value | Definition |
+`DOMAIN_PROFILE_PATH` (default `./domain.md`) is a markdown file with three sections:
+
+```markdown
+# Domain
+One paragraph describing the practice area, in plain language.
+
+# Typology
+- category_name: one-line definition
+- category_name: one-line definition
+...
+
+# What counts as mentorship-worthy
+Guidance for judging whether a given before/after edit reflects a
+real judgment call worth capturing, versus noise (typos, pure
+reformatting, etc.) that shouldn't become a lesson.
+```
+
+Its full text is injected verbatim as shared context into all three MCP prompts (§8.3) — not parsed into structured config, just read as prose, so editing it is as simple as editing a markdown file. Birdie ships with `domain.md` pre-filled using a legal example (matching this project's origin):
+
+| `Typology` category | Definition |
 |---|---|
 | `playbook_compliance` | The edit enforces a documented firm playbook/style-guide rule. |
 | `editorial_style` | A stylistic or formatting preference with no risk or playbook basis (word choice, tone, formatting). |
@@ -191,14 +214,17 @@ The five `typology` values are defined once here and reused by the `extract-less
 | `clarity_precision` | The edit resolves ambiguity or tightens vague drafting without changing the underlying legal position. |
 | `other` | Doesn't fit the above — `why_it_matters` must explain what it is instead. |
 
-Birdie's only responsibility on `save_extraction` is grounding, done in code, not delegated to the model:
+A firm doing audit, tax, or software review replaces this file's content with their own categories and criteria — e.g. an engineering team might use `architecture`, `correctness`, `security`, `style` instead. `lessons.typology` is stored as free text, not a fixed database enum, precisely so this stays a config change, not a code change.
 
-- **Verify the quote** — check `quote` is a substring of `before_text`. If it fails, persist anyway but set `quote_verified=false`, so the review UI surfaces "quote not verified" instead of silently trusting the AI. This is the concrete implementation of "AI should not just provide changes without senior source."
+Birdie's own responsibility, whether or not extraction happens, is grounding, done in code, not delegated to the model:
+
+- **Verify the quote** — on `save_extraction`, check `quote` is a substring of `before_text`. If it fails, persist anyway but set `quote_verified=false`, so the review UI surfaces "quote not verified" instead of silently trusting the AI. This is the concrete implementation of "AI should not just provide changes without senior source."
 - Persist as a `lessons` row with `status='pending_review'`. Trace `status` flips to `'extracted'`.
 
 **Failure modes:**
-- The assistant declines or the call errors → nothing is persisted; the trace stays `status='captured'` and extraction can be requested again later.
-- `save_extraction` is called with an invalid `typology` value or missing required fields → rejected with a validation error, surfaced back to the assistant so it can retry with corrected values.
+- The assistant judges the trace not mentorship-worthy → `skip_extraction` sets trace `status='skipped'` with the given reason. Visible (not silently dropped) in the review queue and Library as a skipped item, so the person who captured it sees why.
+- The assistant declines for another reason or the call errors → nothing is persisted; the trace stays `status='captured'` and extraction can be requested again later.
+- `save_extraction` is called with a `typology` value not present in the current domain profile, or missing required fields → rejected with a validation error, surfaced back to the assistant so it can retry with corrected values.
 - Quote doesn't verify → lesson is still created (senior can still review and manually fix the quote), just flagged.
 
 ---
@@ -257,6 +283,7 @@ Naming a specific `junior_name` in `ask_junior_struggles` is a deliberate choice
 
 ```
 POST   /traces                    { before_text, after_text, submitted_by, submitted_by_role, junior_name?, senior_name?, playbook_ref?, playbook_text?, context_note? }
+GET    /traces?status=            list, filterable by status — including 'skipped', so skipped traces are visible, not just dropped
 GET    /traces/:id
 
 GET    /lessons?status=           list, filterable by status / typology / playbook_ref / junior_name / senior_name
@@ -270,7 +297,8 @@ POST   /lessons/:id/promote       apply edits + publish to the reviewed pool (re
 ```
 capture_trace          same shape as POST /traces
 get_trace               read a trace's before/after/playbook text, for the assistant to reason over
-save_extraction          persist { trace_id, quote, what_changed, why_it_matters, typology, playbook_alignment?, playbook_note? } — quote-verified in code (§6)
+skip_extraction          { trace_id, reason } → sets trace status='skipped' when not mentorship-worthy (§6.1)
+save_extraction          persist { trace_id, quote, what_changed, why_it_matters, typology, playbook_alignment?, playbook_note? } — quote-verified in code, typology validated against the domain profile (§6.1)
 list_lessons             same as GET /lessons, for review-in-chat
 review_lesson            same as PATCH /lessons/:id
 promote_lesson            same as POST /lessons/:id/promote
@@ -281,9 +309,10 @@ ask_junior_struggles      { junior_name? } → promoted lesson cards + typology 
 ### 8.3 MCP prompts (the judgment layer, §9.1)
 
 ```
-extract-lesson           given a trace_id: read it via get_trace, apply the typology taxonomy (§6.1),
-                          verify the quote is verbatim, phrase playbook divergence outright when it
-                          applies, then call save_extraction
+extract-lesson           given a trace_id: read it via get_trace, apply the domain profile's
+                          mentorship-worthy criteria (skip_extraction if it doesn't qualify) and
+                          typology categories (§6.1), verify the quote is verbatim, phrase playbook
+                          divergence outright when it applies, then call save_extraction
 ask-senior-approach       given a question (+ optional senior_name): call ask_senior_approach, then
                           synthesize an answer strictly from the returned lesson cards — no answer
                           if nothing relevant comes back, rather than inventing one
@@ -314,6 +343,7 @@ A thin `skills/birdie-mentor/SKILL.md` sits on top for Claude Code users specifi
 
 ```
 DB_PATH=./data/birdie.db
+DOMAIN_PROFILE_PATH=./domain.md   # edit this file to adapt Birdie to your field — no code change needed (§6.1)
 PORT=4000                 # REST API / web UI only — the MCP server itself takes no network config, it speaks stdio to its host
 ```
 
@@ -326,7 +356,8 @@ Run mode is chosen at the command line (§4.1: `birdie mcp` / `birdie web` / `bi
 - All REST API errors return `{ error: string }` with an appropriate HTTP status; no raw stack traces to the client.
 - All MCP tool errors return a structured tool error the calling assistant can see and react to (e.g. retry with corrected arguments).
 - A trace is always saved on `capture_trace` / `POST /traces` regardless of what happens afterward — extraction only happens later, on request, via `save_extraction`, so there's nothing to fail at capture time.
-- `save_extraction` validates its input (schema-enforced `typology` enum, required fields) and rejects bad calls rather than persisting malformed data.
+- `save_extraction` validates its input (`typology` checked against the loaded domain profile's categories, §6.1; required fields enforced) and rejects bad calls rather than persisting malformed data.
+- Missing or unparseable `domain.md` → falls back to the shipped default (legal) profile rather than failing startup; logged as a warning.
 - Quote-verification failure is a data flag (`quote_verified=false`), never a hard error — the senior can still review and fix it manually.
 - SQLite file is created on first run if missing; schema migration runs at startup (idempotent `CREATE TABLE IF NOT EXISTS`).
 
@@ -337,7 +368,8 @@ Run mode is chosen at the command line (§4.1: `birdie mcp` / `birdie web` / `bi
 Given this is a scaffold, testing is thin but real — focused on the two pieces of logic that can silently misbehave rather than broad coverage:
 
 - **Quote verification** — substring match logic (`backend/test/extraction.test.ts`): exact match, whitespace/formatting differences, no match.
-- **`save_extraction` input validation** — the tool's input schema rejects invalid `typology` values and missing required fields.
+- **Domain profile parsing** — extracting the `# Typology` category list from `domain.md`'s markdown; missing-file fallback to the default profile.
+- **`save_extraction` input validation** — rejects `typology` values not in the loaded profile's categories, and missing required fields.
 
 No end-to-end or UI test suite in v1; manual verification of the capture → extract (via chat) → review → promote → ask loop before considering the scaffold done.
 
@@ -347,9 +379,9 @@ No end-to-end or UI test suite in v1; manual verification of the capture → ext
 
 1. Repo scaffold — npm workspaces root, `backend/` and `web/` packages, TypeScript config, SQLite schema + migration, repository interfaces (`TraceRepository`, `LessonRepository`), and the `birdie` CLI entrypoint (`mcp` / `web` / default-both subcommands, §4.1).
 2. Core service layer — trace/lesson CRUD and quote verification over the repository interfaces (no transport yet).
-3. MCP server (`fastmcp`) — `capture_trace`, `get_trace`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson` tools, wired to the core service. This is the demo-critical path: capture → extract-by-chat → review-by-chat → promote.
+3. MCP server (`fastmcp`) — `capture_trace`, `get_trace`, `skip_extraction`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson` tools, wired to the core service. This is the demo-critical path: capture → extract-by-chat → review-by-chat → promote.
 4. `ask_senior_approach` + `ask_junior_struggles` MCP tools.
-5. MCP prompts (`extract-lesson`, `ask-senior-approach`, `ask-junior-struggles`) — the judgment layer (§8.3, §9.1), including the typology taxonomy (§6.1).
+5. Domain profile loader (`domain.md` parsing for the `# Typology` category list, used by `save_extraction` validation) + MCP prompts (`extract-lesson`, `ask-senior-approach`, `ask-junior-struggles`) that inject the profile as context (§6.1, §8.3, §9.1).
 6. REST API mirroring the data-only operations (`traces`, `lessons` routes) for the web UI.
 7. Web UI: Capture screen → Review screen → Library screen, wired to the REST API.
 8. `skills/birdie-mentor/SKILL.md` — thin Claude Code wrapper over the same tools/prompts.
