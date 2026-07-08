@@ -156,7 +156,19 @@ Triggered either automatically on trace creation (`AUTO_EXTRACT=true`, default) 
 
 ## 7. Review & Promotion
 
-Review queue (`GET /lessons?status=pending_review`) shows each lesson with the AI's guesses editable inline:
+### 7.1 Lesson card format
+
+Every lesson — in the Review queue, in the Library, and in the extraction API response — is rendered as the same three-part card, in this fixed order:
+
+1. **Quote** — the verbatim excerpt from `before_text` that changed.
+2. **What changed** — LLM summary of the edit.
+3. **Why it matters** — LLM-generated reasoning for why the edit was made.
+
+All three fields are LLM-generated at extraction time (§6) and are exactly what a senior confirms or edits during review (§7.2). This triad is the atomic unit of the product — a trace produces one card, a card is what gets reviewed, and a card is what appears in the Library. No screen invents its own summary shape; Capture, Review, and Library all read/write the same `quote` / `what_changed` / `why_it_matters` fields on `lessons`.
+
+### 7.2 Review queue
+
+Review queue (`GET /lessons?status=pending_review`) shows each lesson card (§7.1) with the AI's guesses editable inline:
 
 - Quote, what changed, why it matters — free-text fields, pre-filled, editable.
 - Typology — dropdown, pre-filled with the AI's guess, senior can override. This directly answers "ask senior to confirm a AI generated guess as to why the change is made" with a fixed typology.
@@ -171,6 +183,10 @@ Review queue (`GET /lessons?status=pending_review`) shows each lesson with the A
 4. The lesson becomes visible in `GET /lessons?status=promoted` — the shared Library view.
 
 `POST /lessons/:id/promote` only accepts lessons with `status='pending_review'` (rejects `rejected` or already-`promoted` lessons) — nothing reaches the shared library without going through this endpoint, and this endpoint always requires a `reviewer` name in its body. Enforced in code, not just convention.
+
+### 7.3 Library
+
+`GET /lessons?status=promoted` — the shared library. Each result renders the same lesson card (§7.1: quote, what changed, why it matters), plus typology and playbook alignment as read-only badges. Filterable by `typology` and `playbook_ref`; no full-text search in v1 (SQLite `LIKE` on `quote`/`what_changed`/`why_it_matters` is enough for the volumes a scaffold will see — swap for FTS5 later if needed). Read-only — the Library is a consumption surface, not an editing one; corrections happen by editing the underlying lesson before it was promoted, not after.
 
 ---
 
