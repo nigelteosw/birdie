@@ -31,6 +31,7 @@ This is a post-hackathon scaffold. The goal is a working end-to-end loop, not a 
 - Support **bring-your-own-model** natively, not via provider config: Birdie is an MCP server with zero LLM API calls and zero model credentials. Whatever model is already running the connected client does the reasoning when it calls Birdie's tools. Swapping models means swapping which MCP host you're using, not reconfiguring Birdie.
 - **Local-first for v1**: a single person or small team runs Birdie on their own machine (or one shared internal box) against a single SQLite file. Storage sits behind a small repository interface so a later Postgres-backed "deployed shared service" is a new implementation of that interface, not a rewrite — but that deployment story is explicitly future, not v1 (§3).
 - Let the user choose how to run it at startup — MCP server only, web UI only, or both — rather than forcing one shape (§4.1).
+- Keep "data" and "judgment" as two separate, independently-inspectable layers: MCP **tools** hold no opinions (§8.2), MCP **prompts** hold the taxonomy/methodology and work with any host (§9.1), and a Claude Code **Skill** is a thin, optional wrapper over both — not a third place logic can drift into.
 
 ## 3. Non-goals (explicit out of scope for v1)
 
@@ -88,8 +89,9 @@ birdie/
 │  ├─ src/
 │  │  ├─ server.ts            Express app (REST, data-only), route mounting
 │  │  ├─ mcp/
-│  │  │  ├─ server.ts         MCP server entrypoint (stdio transport)
-│  │  │  └─ tools.ts          tool definitions (§8)
+│  │  │  ├─ server.ts         fastmcp server entrypoint (stdio transport)
+│  │  │  ├─ tools.ts          tool definitions — data layer (§8.2)
+│  │  │  └─ prompts.ts        prompt templates — judgment layer (§8.3, §9.1)
 │  │  ├─ db.ts                better-sqlite3 connection + schema migration
 │  │  ├─ repositories/
 │  │  │  ├─ traceRepository.ts
@@ -113,6 +115,9 @@ birdie/
 │  │  └─ App.tsx
 │  ├─ package.json
 │  └─ vite.config.ts
+├─ skills/
+│  └─ birdie-mentor/
+│     └─ SKILL.md              thin Claude Code wrapper over the MCP tools/prompts (§9.1) — optional, not required for functionality
 ├─ docs/
 │  └─ superpowers/specs/
 ├─ package.json                npm workspaces root (dev script runs REST+web; separate script runs the MCP server)
@@ -173,6 +178,18 @@ There is no extraction service inside Birdie — no LLM API call, no provider co
 1. Calls the `get_trace` tool to read `before_text`, `after_text`, and `playbook_text` (if any).
 2. Reasons about the diff itself — this is the assistant's own model doing the work, whichever one that is.
 3. Calls the `save_extraction` tool with its answer: `{ trace_id, quote, what_changed, why_it_matters, typology, playbook_alignment?, playbook_note? }`. The tool's input schema documents the required shape and the fixed `typology` enum, so any connected model is guided the same way regardless of which one it is.
+
+### 6.1 Typology taxonomy
+
+The five `typology` values are defined once here and reused by the `extract-lesson` MCP prompt (§9.1) and by `save_extraction`'s validation — a single canonical definition, not left to each model's own judgment:
+
+| Value | Definition |
+|---|---|
+| `playbook_compliance` | The edit enforces a documented firm playbook/style-guide rule. |
+| `editorial_style` | A stylistic or formatting preference with no risk or playbook basis (word choice, tone, formatting). |
+| `substantive_risk` | A legal risk or liability judgment call (e.g. changing indemnity caps, liability allocation). |
+| `clarity_precision` | The edit resolves ambiguity or tightens vague drafting without changing the underlying legal position. |
+| `other` | Doesn't fit the above — `why_it_matters` must explain what it is instead. |
 
 Birdie's only responsibility on `save_extraction` is grounding, done in code, not delegated to the model:
 
@@ -261,13 +278,35 @@ ask_senior_approach       { question, senior_name? } → matching promoted lesso
 ask_junior_struggles      { junior_name? } → promoted lesson cards + typology counts for that junior / all juniors (§7.4)
 ```
 
+### 8.3 MCP prompts (the judgment layer, §9.1)
+
+```
+extract-lesson           given a trace_id: read it via get_trace, apply the typology taxonomy (§6.1),
+                          verify the quote is verbatim, phrase playbook divergence outright when it
+                          applies, then call save_extraction
+ask-senior-approach       given a question (+ optional senior_name): call ask_senior_approach, then
+                          synthesize an answer strictly from the returned lesson cards — no answer
+                          if nothing relevant comes back, rather than inventing one
+ask-junior-struggles      given an optional junior_name: call ask_junior_struggles, then summarize
+                          the typology pattern with concrete examples from the returned cards
+```
+
 ---
 
 ## 9. Model Access — no provider code in Birdie
 
 Birdie makes zero LLM API calls and holds no model config, no API keys. This is the literal implementation of "bring your own model": whichever model is already running your MCP host — Claude in Claude Code or Claude Desktop, Codex in Codex CLI, GPT in any other MCP-compatible client — is the model that reasons over Birdie's data, because Birdie only ever hands that host structured data (`get_trace`, `ask_*` results) and accepts structured writes (`save_extraction`, `promote_lesson`). Swapping models means swapping which host you're chatting through; Birdie's code doesn't change.
 
-Built with `@modelcontextprotocol/sdk` (TypeScript), stdio transport — the standard shape for a tool loaded into Claude Code, Claude Desktop, or Codex CLI's MCP config.
+Built with [`fastmcp`](https://github.com/punkpeye/fastmcp) (TypeScript) rather than the raw `@modelcontextprotocol/sdk` — it wraps the SDK with a simpler API for defining tools, prompts, and resources, and handles the stdio transport plumbing (§4.1's `birdie mcp` mode) that any Claude Code / Claude Desktop / Codex CLI MCP config expects. `fastmcp` treats **prompts** as a first-class primitive alongside tools, which is what §9.1 below builds on.
+
+### 9.1 Two parts: tools vs. prompts
+
+The MCP server has two genuinely distinct layers, built the same way `fastmcp` distinguishes them:
+
+- **Tools** (`backend/src/mcp/tools.ts`) — the *data* layer: `capture_trace`, `get_trace`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson`, `ask_senior_approach`, `ask_junior_struggles`. No judgment, no taxonomy, no opinions — just typed reads and writes with the code-side grounding checks from §6/§7.2.
+- **Prompts** (`backend/src/mcp/prompts.ts`) — the *judgment* layer: reusable prompt templates (`extract-lesson`, `ask-senior-approach`, `ask-junior-struggles`) that tell the connected model *how* to do the task well — the typology taxonomy (§6.1), how to phrase a playbook-divergence warning, how to synthesize an `ask_*` answer without inventing lessons that weren't returned. Prompts are protocol-native MCP, so they work identically regardless of which host/model is connected — this is what actually carries "bring your own model," not just the tools existing.
+
+A thin `skills/birdie-mentor/SKILL.md` sits on top for Claude Code users specifically: it points at the same tools and prompts with a bit of extra framing and a worked example, giving Claude Code's Skill-discovery UX a nicer entry point. It adds no logic of its own and isn't required — a Codex CLI or Claude Desktop user gets full functionality from the MCP prompts alone.
 
 ---
 
@@ -308,12 +347,14 @@ No end-to-end or UI test suite in v1; manual verification of the capture → ext
 
 1. Repo scaffold — npm workspaces root, `backend/` and `web/` packages, TypeScript config, SQLite schema + migration, repository interfaces (`TraceRepository`, `LessonRepository`), and the `birdie` CLI entrypoint (`mcp` / `web` / default-both subcommands, §4.1).
 2. Core service layer — trace/lesson CRUD and quote verification over the repository interfaces (no transport yet).
-3. MCP server — `capture_trace`, `get_trace`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson`, wired to the core service. This is the demo-critical path: capture → extract-by-chat → review-by-chat → promote.
+3. MCP server (`fastmcp`) — `capture_trace`, `get_trace`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson` tools, wired to the core service. This is the demo-critical path: capture → extract-by-chat → review-by-chat → promote.
 4. `ask_senior_approach` + `ask_junior_struggles` MCP tools.
-5. REST API mirroring the data-only operations (`traces`, `lessons` routes) for the web UI.
-6. Web UI: Capture screen → Review screen → Library screen, wired to the REST API.
-7. Unit tests for quote verification + `save_extraction` input validation.
-8. README with setup/run instructions, including how to register Birdie as an MCP server in Claude Code / Claude Desktop / Codex CLI.
+5. MCP prompts (`extract-lesson`, `ask-senior-approach`, `ask-junior-struggles`) — the judgment layer (§8.3, §9.1), including the typology taxonomy (§6.1).
+6. REST API mirroring the data-only operations (`traces`, `lessons` routes) for the web UI.
+7. Web UI: Capture screen → Review screen → Library screen, wired to the REST API.
+8. `skills/birdie-mentor/SKILL.md` — thin Claude Code wrapper over the same tools/prompts.
+9. Unit tests for quote verification + `save_extraction` input validation.
+10. README with setup/run instructions, including how to register Birdie as an MCP server in Claude Code / Claude Desktop / Codex CLI.
 
 ---
 
@@ -322,5 +363,6 @@ No end-to-end or UI test suite in v1; manual verification of the capture → ext
 - `/Users/nigel/Projects/LexCatalyst/LexCatalyst/docs/features/birdie-mentor.md` — mentor persona and framing this project borrows its name and spirit from.
 - `/Users/nigel/Projects/LexCatalyst/LexCatalyst/docs/rfc-review-handoff.md` (superseded in that project) — the structured extraction/review/promotion pattern this design adapts.
 - `/Users/nigel/Projects/LexCatalyst/LexCatalyst/docs/product-requirement.md` — original whiteboard notes on the mentorship pain points this addresses.
-- [Model Context Protocol](https://modelcontextprotocol.io) — server/tool primitives this design builds on for "bring your own model."
+- [Model Context Protocol](https://modelcontextprotocol.io) — server/tool/prompt primitives this design builds on for "bring your own model."
+- [`fastmcp`](https://github.com/punkpeye/fastmcp) — the TypeScript framework Birdie's MCP server is built with (§9).
 - LangMem-style local memory MCP tooling — the reference point for pairing a local MCP server with a companion web dashboard over the same store (§4.1).
