@@ -2,21 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Birdie — a local-first MCP server (plus a minimal REST API and one-page web UI) that captures before/after mentorship traces, lets an MCP-connected AI assistant extract lessons from them, gates promotion on human review, and serves two audiences (junior asking how a senior handled something, senior asking what a junior is struggling with) over the same reviewed pool.
+**Goal:** Build Birdie — an MCP server (plus a minimal REST API and one-page web UI) distributed as a Claude Code plugin, that captures before/after mentorship examples, lets an MCP-connected AI assistant extract lessons from them, gates promotion on human review, and serves two audiences (junior asking how a senior handled something, senior asking what a junior is struggling with) over the same reviewed pool — with zero-terminal setup and plain-language chat for the non-technical people who actually use it day to day.
 
-**Architecture:** A single TypeScript/Node backend package with a repository layer over SQLite (`better-sqlite3`), a thin service layer enforcing the business rules (quote verification, domain-profile-validated typology, promotion gating), and two transports sharing that service layer: an MCP server (`fastmcp`, tools + prompts) and a REST API (`express`) backing a one-page React web UI. No LLM provider code anywhere — reasoning happens in whichever model is running the connected MCP host.
+**Architecture:** A single TypeScript/Node backend package with a repository layer over SQLite (`better-sqlite3`), a thin service layer enforcing the business rules (quote verification, domain-profile-validated typology, promotion gating), and two transports sharing that service layer: an MCP server (`fastmcp`, tools + prompts) and a REST API (`express`) backing a one-page React web UI. The REST/web path is always local-SQLite-backed; only the MCP tool layer branches between a local (SQLite, in-process) and remote (HTTP client against someone else's already-running Birdie server) implementation, selected via `~/.birdie/config.json`, written through a guided first-run chat conversation rather than hand-edited. No LLM provider code anywhere — reasoning happens in whichever model is running the connected MCP host. Primary distribution is a Claude Code plugin (`.claude-plugin/plugin.json`) bundling the MCP server and the `birdie-mentor` Skill; manual MCP registration (Claude Desktop, Codex CLI, local dev) remains a secondary/advanced path using the same underlying `birdie` CLI.
 
 **Tech Stack:** TypeScript, Node.js, npm workspaces, `better-sqlite3`, `express`, `fastmcp`, `zod`, `vitest` + `supertest`, React + Vite for the web UI.
 
 ## Global Constraints
 
-- v1 is **local-only**: single SQLite file, no auth, no multi-tenant, no deployed shared service.
-- Birdie makes **zero LLM API calls** and holds no model credentials — all reasoning (extraction, ask synthesis) happens in the connected MCP host's model via tool calls.
+- **Local-by-default, opt-in shared server**: a solo user gets a working single SQLite file with zero setup beyond installing the plugin; a team can instead point the plugin at an existing shared Birdie server's URL during first-run setup. No auth, no multi-tenant — a shared server is a trusted-network assumption, not a hosted multi-user service Birdie builds tooling for.
+- **Zero-terminal setup**: nothing in the primary (Claude Code plugin) path requires `npm install`, editing a `.env` file, or hand-editing MCP config JSON or `~/.birdie/config.json`. Setup is a guided chat conversation (`setup-birdie` MCP prompt) that calls `complete_setup` / `save_domain_profile` on the user's behalf.
+- **Plain language for non-technical users**: every user-visible surface (tool descriptions, the web UI, the Skill's phrasing) uses the vocabulary in `backend/src/copy.ts` / `web/src/copy.ts` (e.g. "example" not "trace", "category" not "typology") — internal type/column/parameter names stay precise and technical, but nothing a user reads should require knowing them.
+- Birdie makes **zero LLM API calls** and holds no model credentials — all reasoning (extraction, ask synthesis, setup conversation) happens in the connected MCP host's model via tool calls.
 - **Quote verification is done in code**, never delegated to the model — `quote` must be a verbatim substring of `before_text`.
 - **Promotion always requires a human reviewer name** and is only possible from `status='pending_review'`.
-- `typology` is **free text validated against the loaded domain profile** (`domain.md`), not a hardcoded enum — the profile must be swappable per-field (law, audit, tax, software, etc.) without a code change.
+- `typology` is **free text validated against the loaded domain profile**, not a hardcoded enum — the profile must be swappable per-field (law, audit, tax, software, etc.) without a code change, and is normally produced through the `setup-birdie` chat interview rather than hand-edited markdown.
 - All wire-facing data (REST JSON bodies/queries, MCP tool parameters, DB columns) uses **snake_case field names**, exactly matching the design spec's data model and API sections. Internal plumbing identifiers (class names, service/repository method names, local variables) use idiomatic camelCase.
-- The web UI is **one page, two parts** (a capture form and a review queue) — no routing, no tabs, no separate library-browsing screen.
+- The web UI is **one page, two parts** (a capture form and a review queue) — no routing, no tabs, no separate library-browsing screen — and is secondary to chat, started on request via `open_review_queue` rather than run as a standing background process.
 - Full design reference: `docs/superpowers/specs/2026-07-08-birdie-mentorship-plugin-design.md`.
 
 ---
@@ -32,7 +34,7 @@
 - Create: `backend/src/types.ts`
 
 **Interfaces:**
-- Produces: `Trace`, `NewTrace`, `TraceStatus`, `Lesson`, `NewExtraction`, `LessonEdit`, `PromotePayload`, `LessonFilters`, `PlaybookAlignment`, `SubmittedByRole` — the domain types every later task imports from `backend/src/types.ts`.
+- Produces: `Trace`, `NewTrace`, `TraceStatus`, `Lesson`, `LessonWithTrace`, `NewExtraction`, `LessonEdit`, `PromotePayload`, `LessonFilters`, `PlaybookAlignment`, `SubmittedByRole`, `TraceServiceLike`, `LessonServiceLike` — the domain types every later task imports from `backend/src/types.ts`.
 
 - [ ] **Step 1: Create the root workspace `package.json`**
 
@@ -163,6 +165,9 @@ export interface NewTrace {
 export interface Lesson {
   id: string;
   trace_id: string;
+  junior_name: string | null;
+  senior_name: string | null;
+  playbook_ref: string | null;
   quote: string;
   quote_verified: boolean;
   what_changed: string;
@@ -175,6 +180,12 @@ export interface Lesson {
   reviewed_at: string | null;
   promoted_at: string | null;
   created_at: string;
+}
+
+export interface LessonWithTrace extends Lesson {
+  junior_name: string | null;
+  senior_name: string | null;
+  playbook_ref: string | null;
 }
 
 export interface NewExtraction {
@@ -210,6 +221,26 @@ export interface LessonFilters {
   junior_name?: string;
   senior_name?: string;
 }
+
+// Async on purpose, even though the local (SQLite) implementation is synchronous under the
+// hood: the MCP tool layer (Task 6) is typed against these interfaces so a local and a remote
+// (HTTP, necessarily async) implementation can both satisfy it. See Task 15.
+export interface TraceServiceLike {
+  capture(input: NewTrace): Promise<Trace>;
+  get(id: string): Promise<Trace | undefined>;
+  list(status?: TraceStatus): Promise<Trace[]>;
+  skip(id: string, reason: string): Promise<Trace>;
+  extract(input: NewExtraction): Promise<LessonWithTrace>;
+}
+
+export interface LessonServiceLike {
+  list(filters: LessonFilters): Promise<LessonWithTrace[]>;
+  get(id: string): Promise<LessonWithTrace | undefined>;
+  review(id: string, changes: LessonEdit): Promise<LessonWithTrace>;
+  promote(id: string, payload: PromotePayload): Promise<LessonWithTrace>;
+  askSeniorApproach(question: string, senior_name?: string): Promise<LessonWithTrace[]>;
+  askJuniorStruggles(junior_name?: string): Promise<{ lessons: LessonWithTrace[]; typology_counts: Record<string, number> }>;
+}
 ```
 
 - [ ] **Step 7: Install dependencies and verify the build**
@@ -223,7 +254,7 @@ Expected: `tsc` compiles `backend/src/types.ts` to `backend/dist/types.js` with 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add package.json .gitignore backend/package.json backend/tsconfig.json backend/.env.example backend/src/types.ts backend/package-lock.json package-lock.json
+git add package.json .gitignore backend/package.json backend/tsconfig.json backend/.env.example backend/src/types.ts package-lock.json
 git commit -m "Scaffold npm workspaces and backend domain types"
 ```
 
@@ -238,8 +269,8 @@ git commit -m "Scaffold npm workspaces and backend domain types"
 - Test: `backend/test/repositories.test.ts`
 
 **Interfaces:**
-- Consumes: `Trace`, `NewTrace`, `TraceStatus`, `Lesson`, `NewExtraction`, `LessonEdit`, `LessonFilters`, `PromotePayload` from `backend/src/types.ts` (Task 1).
-- Produces: `openDb(dbPath: string): Database.Database`; `class TraceRepository` with `create(input: NewTrace): Trace`, `getById(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `markExtracted(id: string): void`, `markSkipped(id: string, reason: string): void`; `class LessonRepository` with `create(input: NewExtraction & { quote_verified: boolean }): Lesson`, `getById(id: string): Lesson | undefined`, `list(filters: LessonFilters): Lesson[]`, `edit(id: string, changes: LessonEdit): Lesson`, `promote(id: string, payload: PromotePayload): Lesson`. Both repositories take a `Database.Database` instance in their constructor.
+- Consumes: `Trace`, `NewTrace`, `TraceStatus`, `Lesson`, `LessonWithTrace`, `NewExtraction`, `LessonEdit`, `LessonFilters`, `PromotePayload` from `backend/src/types.ts` (Task 1).
+- Produces: `openDb(dbPath: string): Database.Database`; `class TraceRepository` with `create(input: NewTrace): Trace`, `getById(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `markExtracted(id: string): void`, `markSkipped(id: string, reason: string): void`; `class LessonRepository` with `create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace`, `getById(id: string): LessonWithTrace | undefined`, `getByTraceId(traceId: string): LessonWithTrace | undefined`, `list(filters: LessonFilters): LessonWithTrace[]`, `edit(id: string, changes: LessonEdit): LessonWithTrace`, `promote(id: string, payload: PromotePayload): LessonWithTrace`. Both repositories take a `Database.Database` instance in their constructor.
 
 - [ ] **Step 1: Create `backend/src/db.ts`**
 
@@ -293,7 +324,7 @@ function migrate(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
-    CREATE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
 }
 ```
@@ -408,6 +439,19 @@ describe('LessonRepository', () => {
     expect(edited.status).toBe('rejected');
   });
 
+  it('recomputes quote verification when editing the quote', () => {
+    const lesson = lessons.create({
+      trace_id: traceId,
+      quote: 'uncapped indemnity',
+      quote_verified: true,
+      what_changed: 'x',
+      why_it_matters: 'y',
+      typology: 'substantive_risk',
+    });
+    const edited = lessons.edit(lesson.id, { quote: 'not in the original' });
+    expect(edited.quote_verified).toBe(false);
+  });
+
   it('promotes a pending lesson and stamps reviewer/timestamps', () => {
     const lesson = lessons.create({
       trace_id: traceId,
@@ -421,6 +465,19 @@ describe('LessonRepository', () => {
     expect(promoted.status).toBe('promoted');
     expect(promoted.reviewer).toBe('Sarah');
     expect(promoted.promoted_at).not.toBeNull();
+  });
+
+  it('recomputes quote verification when promotion includes an edited quote', () => {
+    const lesson = lessons.create({
+      trace_id: traceId,
+      quote: 'not in the original',
+      quote_verified: false,
+      what_changed: 'x',
+      why_it_matters: 'y',
+      typology: 'substantive_risk',
+    });
+    const promoted = lessons.promote(lesson.id, { reviewer: 'Sarah', quote: 'uncapped indemnity' });
+    expect(promoted.quote_verified).toBe(true);
   });
 
   it('refuses to promote a lesson that is not pending_review', () => {
@@ -502,20 +559,20 @@ export class TraceRepository {
 ```typescript
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import type { Lesson, LessonEdit, LessonFilters, NewExtraction, PromotePayload } from '../types.js';
+import type { LessonWithTrace, LessonEdit, LessonFilters, NewExtraction, PromotePayload } from '../types.js';
 
-interface LessonRow extends Omit<Lesson, 'quote_verified'> {
+interface LessonRow extends Omit<LessonWithTrace, 'quote_verified'> {
   quote_verified: number;
 }
 
-function rowToLesson(row: LessonRow): Lesson {
+function rowToLesson(row: LessonRow): LessonWithTrace {
   return { ...row, quote_verified: row.quote_verified === 1 };
 }
 
 export class LessonRepository {
   constructor(private db: Database.Database) {}
 
-  create(input: NewExtraction & { quote_verified: boolean }): Lesson {
+  create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace {
     const id = randomUUID();
     this.db
       .prepare(
@@ -536,12 +593,37 @@ export class LessonRepository {
     return this.getById(id)!;
   }
 
-  getById(id: string): Lesson | undefined {
-    const row = this.db.prepare('SELECT * FROM lessons WHERE id = ?').get(id) as LessonRow | undefined;
+  getById(id: string): LessonWithTrace | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+         FROM lessons l JOIN traces t ON t.id = l.trace_id
+         WHERE l.id = ?`
+      )
+      .get(id) as LessonRow | undefined;
     return row ? rowToLesson(row) : undefined;
   }
 
-  list(filters: LessonFilters): Lesson[] {
+  getByTraceId(traceId: string): LessonWithTrace | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+         FROM lessons l JOIN traces t ON t.id = l.trace_id
+         WHERE l.trace_id = ?`
+      )
+      .get(traceId) as LessonRow | undefined;
+    return row ? rowToLesson(row) : undefined;
+  }
+
+  private beforeTextForLesson(id: string): string {
+    const row = this.db
+      .prepare('SELECT t.before_text FROM lessons l JOIN traces t ON t.id = l.trace_id WHERE l.id = ?')
+      .get(id) as { before_text: string } | undefined;
+    if (!row) throw new Error(`Lesson not found: ${id}`);
+    return row.before_text;
+  }
+
+  list(filters: LessonFilters): LessonWithTrace[] {
     const clauses: string[] = [];
     const params: Record<string, string> = {};
     if (filters.status) {
@@ -566,12 +648,17 @@ export class LessonRepository {
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = this.db
-      .prepare(`SELECT l.* FROM lessons l JOIN traces t ON t.id = l.trace_id ${where} ORDER BY l.created_at DESC`)
+      .prepare(
+        `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+         FROM lessons l JOIN traces t ON t.id = l.trace_id
+         ${where}
+         ORDER BY l.created_at DESC`
+      )
       .all(params) as LessonRow[];
     return rows.map(rowToLesson);
   }
 
-  edit(id: string, changes: LessonEdit): Lesson {
+  edit(id: string, changes: LessonEdit): LessonWithTrace {
     const current = this.getById(id);
     if (!current) throw new Error(`Lesson not found: ${id}`);
     const next = {
@@ -581,19 +668,26 @@ export class LessonRepository {
       typology: changes.typology ?? current.typology,
       status: changes.status ?? current.status,
     };
+    const quote_verified =
+      changes.quote === undefined
+        ? current.quote_verified
+        : next.quote.length > 0 && this.beforeTextForLesson(id).includes(next.quote);
     this.db
       .prepare(
-        `UPDATE lessons SET quote = @quote, what_changed = @what_changed, why_it_matters = @why_it_matters, typology = @typology, status = @status WHERE id = @id`
+        `UPDATE lessons SET quote = @quote, quote_verified = @quote_verified, what_changed = @what_changed, why_it_matters = @why_it_matters, typology = @typology, status = @status WHERE id = @id`
       )
-      .run({ id, ...next });
+      .run({ id, ...next, quote_verified: quote_verified ? 1 : 0 });
     return this.getById(id)!;
   }
 
-  promote(id: string, payload: PromotePayload): Lesson {
+  promote(id: string, payload: PromotePayload): LessonWithTrace {
     const current = this.getById(id);
     if (!current) throw new Error(`Lesson not found: ${id}`);
     if (current.status !== 'pending_review') {
       throw new Error(`Lesson ${id} cannot be promoted from status '${current.status}'`);
+    }
+    if (!payload.reviewer.trim()) {
+      throw new Error('Reviewer is required');
     }
     const next = {
       quote: payload.quote ?? current.quote,
@@ -601,12 +695,16 @@ export class LessonRepository {
       why_it_matters: payload.why_it_matters ?? current.why_it_matters,
       typology: payload.typology ?? current.typology,
     };
+    const quote_verified =
+      payload.quote === undefined
+        ? current.quote_verified
+        : next.quote.length > 0 && this.beforeTextForLesson(id).includes(next.quote);
     this.db
       .prepare(
-        `UPDATE lessons SET quote = @quote, what_changed = @what_changed, why_it_matters = @why_it_matters, typology = @typology,
+        `UPDATE lessons SET quote = @quote, quote_verified = @quote_verified, what_changed = @what_changed, why_it_matters = @why_it_matters, typology = @typology,
          status = 'promoted', reviewer = @reviewer, reviewed_at = @now, promoted_at = @now WHERE id = @id`
       )
-      .run({ id, ...next, reviewer: payload.reviewer, now: new Date().toISOString() });
+      .run({ id, ...next, quote_verified: quote_verified ? 1 : 0, reviewer: payload.reviewer.trim(), now: new Date().toISOString() });
     return this.getById(id)!;
   }
 }
@@ -615,7 +713,7 @@ export class LessonRepository {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `npm run test --workspace backend`
-Expected: PASS (9 tests passed: 3 in `TraceRepository`, 6 in `LessonRepository`).
+Expected: PASS (11 tests passed: 3 in `TraceRepository`, 8 in `LessonRepository`).
 
 - [ ] **Step 7: Commit**
 
@@ -656,8 +754,8 @@ describe('verifyQuote', () => {
     expect(verifyQuote('shall  indemnify', 'The party shall indemnify all losses.')).toBe(false);
   });
 
-  it('treats an empty quote as trivially verified', () => {
-    expect(verifyQuote('', 'The party shall indemnify all losses.')).toBe(true);
+  it('does not verify an empty quote', () => {
+    expect(verifyQuote('', 'The party shall indemnify all losses.')).toBe(false);
   });
 });
 ```
@@ -671,7 +769,7 @@ Expected: FAIL — `Cannot find module '../src/extraction.js'`.
 
 ```typescript
 export function verifyQuote(quote: string, beforeText: string): boolean {
-  return beforeText.includes(quote);
+  return quote.length > 0 && beforeText.includes(quote);
 }
 ```
 
@@ -840,7 +938,7 @@ git commit -m "Add domain profile loader with legal example default"
 
 **Interfaces:**
 - Consumes: `TraceRepository`, `LessonRepository` (Task 2), `verifyQuote` (Task 3), `DomainProfile` (Task 4), and the types from Task 1.
-- Produces: `class TraceService` with `capture(input: NewTrace): Trace`, `get(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `skip(id: string, reason: string): Trace`, `extract(input: NewExtraction): Lesson`. `class LessonService` with `list(filters: LessonFilters): Lesson[]`, `get(id: string): Lesson | undefined`, `review(id: string, changes: LessonEdit): Lesson`, `promote(id: string, payload: PromotePayload): Lesson`. Both are consumed by the MCP tools (Task 6) and REST routes (Task 9).
+- Produces: `class TraceService` with `capture(input: NewTrace): Trace`, `get(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `skip(id: string, reason: string): Trace`, `extract(input: NewExtraction): LessonWithTrace`. `class LessonService` with `list(filters: LessonFilters): LessonWithTrace[]`, `get(id: string): LessonWithTrace | undefined`, `review(id: string, changes: LessonEdit): LessonWithTrace`, `promote(id: string, payload: PromotePayload): LessonWithTrace`. Both are consumed by the MCP tools (Task 6) and REST routes (Task 9).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -867,7 +965,7 @@ describe('TraceService + LessonService', () => {
     const lessonRepo = new LessonRepository(db);
     const profile = loadDomainProfile('/nonexistent/domain.md');
     traceService = new TraceService(traceRepo, lessonRepo, profile);
-    lessonService = new LessonService(lessonRepo);
+    lessonService = new LessonService(lessonRepo, profile);
   });
 
   it('extracts a lesson and marks the trace extracted, verifying the quote', () => {
@@ -920,6 +1018,26 @@ describe('TraceService + LessonService', () => {
     ).toThrow(/Unknown typology/);
   });
 
+  it('refuses to extract more than one lesson for the same trace', () => {
+    const trace = traceService.capture({ submitted_by: 'Jane', submitted_by_role: 'junior', before_text: 'a', after_text: 'b' });
+    traceService.extract({
+      trace_id: trace.id,
+      quote: 'a',
+      what_changed: 'x',
+      why_it_matters: 'y',
+      typology: 'other',
+    });
+    expect(() =>
+      traceService.extract({
+        trace_id: trace.id,
+        quote: 'a',
+        what_changed: 'x again',
+        why_it_matters: 'y again',
+        typology: 'other',
+      })
+    ).toThrow(/already extracted/);
+  });
+
   it('skips a trace with a reason instead of extracting', () => {
     const trace = traceService.capture({ submitted_by: 'Jane', submitted_by_role: 'junior', before_text: 'a', after_text: 'a ' });
     const skipped = traceService.skip(trace.id, 'Whitespace-only change, not a judgment call.');
@@ -945,6 +1063,23 @@ describe('TraceService + LessonService', () => {
     expect(promoted.status).toBe('promoted');
     expect(lessonService.list({ status: 'promoted' })).toHaveLength(1);
   });
+
+  it('rejects review edits with a typology outside the domain profile', () => {
+    const trace = traceService.capture({
+      submitted_by: 'Jane',
+      submitted_by_role: 'junior',
+      before_text: 'uncapped indemnity',
+      after_text: 'capped indemnity',
+    });
+    const lesson = traceService.extract({
+      trace_id: trace.id,
+      quote: 'uncapped indemnity',
+      what_changed: 'Capped it.',
+      why_it_matters: 'Risk control.',
+      typology: 'substantive_risk',
+    });
+    expect(() => lessonService.review(lesson.id, { typology: 'not_a_real_category' })).toThrow(/Unknown typology/);
+  });
 });
 ```
 
@@ -960,7 +1095,7 @@ import type { TraceRepository } from '../repositories/traceRepository.js';
 import type { LessonRepository } from '../repositories/lessonRepository.js';
 import type { DomainProfile } from '../domain.js';
 import { verifyQuote } from '../extraction.js';
-import type { Lesson, NewExtraction, NewTrace, Trace, TraceStatus } from '../types.js';
+import type { LessonWithTrace, NewExtraction, NewTrace, Trace, TraceStatus } from '../types.js';
 
 export class TraceService {
   constructor(
@@ -988,9 +1123,15 @@ export class TraceService {
     return this.traces.getById(id)!;
   }
 
-  extract(input: NewExtraction): Lesson {
+  extract(input: NewExtraction): LessonWithTrace {
     const trace = this.traces.getById(input.trace_id);
     if (!trace) throw new Error(`Trace not found: ${input.trace_id}`);
+    if (trace.status !== 'captured') {
+      throw new Error(`Trace ${input.trace_id} was already ${trace.status}`);
+    }
+    if (this.lessons.getByTraceId(input.trace_id)) {
+      throw new Error(`Trace ${input.trace_id} already extracted`);
+    }
     if (!this.domainProfile.typology_categories.includes(input.typology)) {
       throw new Error(
         `Unknown typology '${input.typology}'. Valid categories: ${this.domainProfile.typology_categories.join(', ')}`
@@ -1008,25 +1149,37 @@ export class TraceService {
 
 ```typescript
 import type { LessonRepository } from '../repositories/lessonRepository.js';
-import type { Lesson, LessonEdit, LessonFilters, PromotePayload } from '../types.js';
+import type { DomainProfile } from '../domain.js';
+import type { LessonEdit, LessonFilters, LessonWithTrace, PromotePayload } from '../types.js';
 
 export class LessonService {
-  constructor(private lessons: LessonRepository) {}
+  constructor(
+    private lessons: LessonRepository,
+    private domainProfile: DomainProfile
+  ) {}
 
-  list(filters: LessonFilters): Lesson[] {
+  list(filters: LessonFilters): LessonWithTrace[] {
     return this.lessons.list(filters);
   }
 
-  get(id: string): Lesson | undefined {
+  get(id: string): LessonWithTrace | undefined {
     return this.lessons.getById(id);
   }
 
-  review(id: string, changes: LessonEdit): Lesson {
+  review(id: string, changes: LessonEdit): LessonWithTrace {
+    this.validateTypology(changes.typology);
     return this.lessons.edit(id, changes);
   }
 
-  promote(id: string, payload: PromotePayload): Lesson {
+  promote(id: string, payload: PromotePayload): LessonWithTrace {
+    this.validateTypology(payload.typology);
     return this.lessons.promote(id, payload);
+  }
+
+  private validateTypology(typology: string | undefined): void {
+    if (typology && !this.domainProfile.typology_categories.includes(typology)) {
+      throw new Error(`Unknown typology '${typology}'. Valid categories: ${this.domainProfile.typology_categories.join(', ')}`);
+    }
   }
 }
 ```
@@ -1034,7 +1187,7 @@ export class LessonService {
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npm run test --workspace backend -- services`
-Expected: PASS (5 tests passed).
+Expected: PASS (7 tests passed).
 
 - [ ] **Step 6: Commit**
 
@@ -1054,8 +1207,10 @@ git commit -m "Add core TraceService/LessonService business logic"
 - Test: `backend/test/tools.test.ts`
 
 **Interfaces:**
-- Consumes: `TraceService`, `LessonService` (Task 5), `openDb` (Task 2), `loadDomainProfile` (Task 4).
-- Produces: `interface AppContext { traceService: TraceService; lessonService: LessonService; domainProfile: DomainProfile }`; `buildContext(): AppContext`; `interface ToolContext { traceService: TraceService; lessonService: LessonService }`; handler functions `captureTraceHandler`, `getTraceHandler`, `skipExtractionHandler`, `saveExtractionHandler`, `listLessonsHandler`, `reviewLessonHandler`, `promoteLessonHandler`; `registerTools(server: FastMCP, ctx: ToolContext): void`; `createMcpServer(ctx: ToolContext, domainProfile: DomainProfile): FastMCP`. Used by `cli.ts` (Task 10) and extended by Task 7 (ask tools) and Task 8 (prompts).
+- Consumes: `TraceService`, `LessonService` (Task 5), `openDb` (Task 2), `loadDomainProfile` (Task 4), `TraceServiceLike`, `LessonServiceLike` (Task 1).
+- Produces: `interface AppContext { traceService: TraceService; lessonService: LessonService; domainProfile: DomainProfile }`; `buildContext(): AppContext`; `interface ToolContext { traceService: TraceServiceLike; lessonService: LessonServiceLike }`; `toToolContext(ctx: AppContext): ToolContext`; async handler functions `captureTraceHandler`, `getTraceHandler`, `skipExtractionHandler`, `saveExtractionHandler`, `listLessonsHandler`, `reviewLessonHandler`, `promoteLessonHandler`; `registerTools(server: FastMCP, ctx: ToolContext): void`; `createMcpServer(ctx: ToolContext, domainProfile: DomainProfile): FastMCP`. Used by `cli.ts` (Task 10) and extended by Task 7 (ask tools) and Task 8 (prompts).
+
+`ToolContext` is typed against `TraceServiceLike` / `LessonServiceLike`, not the concrete `TraceService` / `LessonService` classes, and every handler is `async` even though the local implementation underneath is synchronous SQLite — Task 15 adds a second, remote (HTTP, genuinely async) implementation of the same interfaces, and both need to work through the exact same handler code without a rewrite.
 
 - [ ] **Step 1: Create `backend/src/context.ts`**
 
@@ -1066,6 +1221,7 @@ import { LessonRepository } from './repositories/lessonRepository.js';
 import { TraceService } from './services/traceService.js';
 import { LessonService } from './services/lessonService.js';
 import { loadDomainProfile, type DomainProfile } from './domain.js';
+import type { ToolContext } from './mcp/tools.js';
 
 export interface AppContext {
   traceService: TraceService;
@@ -1082,8 +1238,32 @@ export function buildContext(): AppContext {
   const domainProfile = loadDomainProfile(domainProfilePath);
   return {
     traceService: new TraceService(traceRepo, lessonRepo, domainProfile),
-    lessonService: new LessonService(lessonRepo),
+    lessonService: new LessonService(lessonRepo, domainProfile),
     domainProfile,
+  };
+}
+
+// Wraps the (synchronous) local AppContext services in async-returning adapters so they
+// satisfy ToolContext (TraceServiceLike / LessonServiceLike, Task 1) the same way a remote
+// HTTP-backed implementation does (Task 15). Awaiting a non-Promise value in an async
+// function is a no-op in JS - this adds no real asynchrony for the local case.
+export function toToolContext(ctx: AppContext): ToolContext {
+  return {
+    traceService: {
+      capture: async (input) => ctx.traceService.capture(input),
+      get: async (id) => ctx.traceService.get(id),
+      list: async (status) => ctx.traceService.list(status),
+      skip: async (id, reason) => ctx.traceService.skip(id, reason),
+      extract: async (input) => ctx.traceService.extract(input),
+    },
+    lessonService: {
+      list: async (filters) => ctx.lessonService.list(filters),
+      get: async (id) => ctx.lessonService.get(id),
+      review: async (id, changes) => ctx.lessonService.review(id, changes),
+      promote: async (id, payload) => ctx.lessonService.promote(id, payload),
+      askSeniorApproach: async (question, seniorName) => ctx.lessonService.askSeniorApproach(question, seniorName),
+      askJuniorStruggles: async (juniorName) => ctx.lessonService.askJuniorStruggles(juniorName),
+    },
   };
 }
 ```
@@ -1101,6 +1281,7 @@ import { LessonRepository } from '../src/repositories/lessonRepository.js';
 import { TraceService } from '../src/services/traceService.js';
 import { LessonService } from '../src/services/lessonService.js';
 import { loadDomainProfile } from '../src/domain.js';
+import { toToolContext } from '../src/context.js';
 import {
   captureTraceHandler,
   getTraceHandler,
@@ -1119,25 +1300,26 @@ describe('MCP tool handlers', () => {
     const traceRepo = new TraceRepository(db);
     const lessonRepo = new LessonRepository(db);
     const profile = loadDomainProfile('/nonexistent/domain.md');
-    ctx = {
+    ctx = toToolContext({
       traceService: new TraceService(traceRepo, lessonRepo, profile),
-      lessonService: new LessonService(lessonRepo),
-    };
+      lessonService: new LessonService(lessonRepo, profile),
+      domainProfile: profile,
+    });
   });
 
-  it('captures a trace and reads it back via get_trace', () => {
-    const trace = captureTraceHandler(ctx, {
+  it('captures a trace and reads it back via get_trace', async () => {
+    const trace = await captureTraceHandler(ctx, {
       before_text: 'uncapped indemnity',
       after_text: 'capped indemnity',
       submitted_by: 'Jane',
       submitted_by_role: 'junior',
     });
-    const fetched = getTraceHandler(ctx, { trace_id: trace.id });
+    const fetched = await getTraceHandler(ctx, { trace_id: trace.id });
     expect(fetched.before_text).toBe('uncapped indemnity');
   });
 
-  it('saves an extraction and then promotes it', () => {
-    const trace = captureTraceHandler(ctx, {
+  it('saves an extraction and then promotes it', async () => {
+    const trace = await captureTraceHandler(ctx, {
       before_text: 'uncapped indemnity',
       after_text: 'capped indemnity',
       submitted_by: 'Jane',
@@ -1145,7 +1327,7 @@ describe('MCP tool handlers', () => {
       junior_name: 'Jane',
       senior_name: 'Sarah',
     });
-    const lesson = saveExtractionHandler(ctx, {
+    const lesson = await saveExtractionHandler(ctx, {
       trace_id: trace.id,
       quote: 'uncapped indemnity',
       what_changed: 'Capped the indemnity.',
@@ -1153,18 +1335,18 @@ describe('MCP tool handlers', () => {
       typology: 'substantive_risk',
     });
     expect(lesson.quote_verified).toBe(true);
-    const promoted = promoteLessonHandler(ctx, { lesson_id: lesson.id, reviewer: 'Sarah' });
+    const promoted = await promoteLessonHandler(ctx, { lesson_id: lesson.id, reviewer: 'Sarah' });
     expect(promoted.status).toBe('promoted');
   });
 
-  it('skips a trace instead of extracting when not mentorship-worthy', () => {
-    const trace = captureTraceHandler(ctx, {
+  it('skips a trace instead of extracting when not mentorship-worthy', async () => {
+    const trace = await captureTraceHandler(ctx, {
       before_text: 'teh',
       after_text: 'the',
       submitted_by: 'Jane',
       submitted_by_role: 'junior',
     });
-    const skipped = skipExtractionHandler(ctx, { trace_id: trace.id, reason: 'Typo fix only.' });
+    const skipped = await skipExtractionHandler(ctx, { trace_id: trace.id, reason: 'Typo fix only.' });
     expect(skipped.status).toBe('skipped');
   });
 });
@@ -1180,12 +1362,11 @@ Expected: FAIL — `Cannot find module '../src/mcp/tools.js'`.
 ```typescript
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
-import type { TraceService } from '../services/traceService.js';
-import type { LessonService } from '../services/lessonService.js';
+import type { TraceServiceLike, LessonServiceLike } from '../types.js';
 
 export interface ToolContext {
-  traceService: TraceService;
-  lessonService: LessonService;
+  traceService: TraceServiceLike;
+  lessonService: LessonServiceLike;
 }
 
 export const captureTraceParams = z.object({
@@ -1227,50 +1408,50 @@ export const listLessonsParams = z.object({
 
 export const reviewLessonParams = z.object({
   lesson_id: z.string().min(1),
-  quote: z.string().optional(),
-  what_changed: z.string().optional(),
-  why_it_matters: z.string().optional(),
-  typology: z.string().optional(),
+  quote: z.string().min(1).optional(),
+  what_changed: z.string().min(1).optional(),
+  why_it_matters: z.string().min(1).optional(),
+  typology: z.string().min(1).optional(),
   reject: z.boolean().optional(),
 });
 
 export const promoteLessonParams = z.object({
   lesson_id: z.string().min(1),
-  reviewer: z.string().min(1),
-  quote: z.string().optional(),
-  what_changed: z.string().optional(),
-  why_it_matters: z.string().optional(),
-  typology: z.string().optional(),
+  reviewer: z.string().trim().min(1),
+  quote: z.string().min(1).optional(),
+  what_changed: z.string().min(1).optional(),
+  why_it_matters: z.string().min(1).optional(),
+  typology: z.string().min(1).optional(),
 });
 
-export function captureTraceHandler(ctx: ToolContext, args: z.infer<typeof captureTraceParams>) {
+export async function captureTraceHandler(ctx: ToolContext, args: z.infer<typeof captureTraceParams>) {
   return ctx.traceService.capture(args);
 }
 
-export function getTraceHandler(ctx: ToolContext, args: z.infer<typeof getTraceParams>) {
-  const trace = ctx.traceService.get(args.trace_id);
+export async function getTraceHandler(ctx: ToolContext, args: z.infer<typeof getTraceParams>) {
+  const trace = await ctx.traceService.get(args.trace_id);
   if (!trace) throw new Error(`Trace not found: ${args.trace_id}`);
   return trace;
 }
 
-export function skipExtractionHandler(ctx: ToolContext, args: z.infer<typeof skipExtractionParams>) {
+export async function skipExtractionHandler(ctx: ToolContext, args: z.infer<typeof skipExtractionParams>) {
   return ctx.traceService.skip(args.trace_id, args.reason);
 }
 
-export function saveExtractionHandler(ctx: ToolContext, args: z.infer<typeof saveExtractionParams>) {
+export async function saveExtractionHandler(ctx: ToolContext, args: z.infer<typeof saveExtractionParams>) {
   return ctx.traceService.extract(args);
 }
 
-export function listLessonsHandler(ctx: ToolContext, args: z.infer<typeof listLessonsParams>) {
+export async function listLessonsHandler(ctx: ToolContext, args: z.infer<typeof listLessonsParams>) {
   return ctx.lessonService.list(args);
 }
 
-export function reviewLessonHandler(ctx: ToolContext, args: z.infer<typeof reviewLessonParams>) {
+export async function reviewLessonHandler(ctx: ToolContext, args: z.infer<typeof reviewLessonParams>) {
   const { lesson_id, reject, ...fields } = args;
   return ctx.lessonService.review(lesson_id, { ...fields, status: reject ? 'rejected' : undefined });
 }
 
-export function promoteLessonHandler(ctx: ToolContext, args: z.infer<typeof promoteLessonParams>) {
+export async function promoteLessonHandler(ctx: ToolContext, args: z.infer<typeof promoteLessonParams>) {
   const { lesson_id, ...payload } = args;
   return ctx.lessonService.promote(lesson_id, payload);
 }
@@ -1280,43 +1461,43 @@ export function registerTools(server: FastMCP, ctx: ToolContext): void {
     name: 'capture_trace',
     description: 'Capture a before/after edit as a trace for later extraction into a mentorship lesson.',
     parameters: captureTraceParams,
-    execute: async (args) => JSON.stringify(captureTraceHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await captureTraceHandler(ctx, args)),
   });
   server.addTool({
     name: 'get_trace',
     description: "Read a trace's before/after/playbook text to reason over before extracting a lesson.",
     parameters: getTraceParams,
-    execute: async (args) => JSON.stringify(getTraceHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await getTraceHandler(ctx, args)),
   });
   server.addTool({
     name: 'skip_extraction',
     description: 'Mark a trace as not mentorship-worthy instead of forcing a lesson out of it.',
     parameters: skipExtractionParams,
-    execute: async (args) => JSON.stringify(skipExtractionHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await skipExtractionHandler(ctx, args)),
   });
   server.addTool({
     name: 'save_extraction',
     description: 'Persist an extracted lesson: quote, what changed, why it matters, typology, and playbook alignment.',
     parameters: saveExtractionParams,
-    execute: async (args) => JSON.stringify(saveExtractionHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await saveExtractionHandler(ctx, args)),
   });
   server.addTool({
     name: 'list_lessons',
     description: 'List lessons, filterable by status, typology, playbook_ref, junior_name, senior_name.',
     parameters: listLessonsParams,
-    execute: async (args) => JSON.stringify(listLessonsHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await listLessonsHandler(ctx, args)),
   });
   server.addTool({
     name: 'review_lesson',
     description: 'Edit a pending lesson in place, or reject it.',
     parameters: reviewLessonParams,
-    execute: async (args) => JSON.stringify(reviewLessonHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await reviewLessonHandler(ctx, args)),
   });
   server.addTool({
     name: 'promote_lesson',
     description: 'Promote a reviewed lesson into the shared pool, requiring a reviewer name.',
     parameters: promoteLessonParams,
-    execute: async (args) => JSON.stringify(promoteLessonHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await promoteLessonHandler(ctx, args)),
   });
 }
 ```
@@ -1359,8 +1540,8 @@ git commit -m "Add MCP server with data-layer tools (capture/get/skip/save/list/
 - Test: `backend/test/ask.test.ts`
 
 **Interfaces:**
-- Produces (added to `LessonRepository`): `searchPromoted(question: string, senior_name?: string): Lesson[]`, `strugglesFor(junior_name?: string): { lessons: Lesson[]; typology_counts: Record<string, number> }`.
-- Produces (added to `LessonService`): `askSeniorApproach(question: string, senior_name?: string): Lesson[]`, `askJuniorStruggles(junior_name?: string): { lessons: Lesson[]; typology_counts: Record<string, number> }`.
+- Produces (added to `LessonRepository`): `searchPromoted(question: string, senior_name?: string): LessonWithTrace[]`, `strugglesFor(junior_name?: string): { lessons: LessonWithTrace[]; typology_counts: Record<string, number> }`.
+- Produces (added to `LessonService`): `askSeniorApproach(question: string, senior_name?: string): LessonWithTrace[]`, `askJuniorStruggles(junior_name?: string): { lessons: LessonWithTrace[]; typology_counts: Record<string, number> }`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1387,7 +1568,7 @@ describe('ask_senior_approach / ask_junior_struggles', () => {
     const lessonRepo = new LessonRepository(db);
     const profile = loadDomainProfile('/nonexistent/domain.md');
     traceService = new TraceService(traceRepo, lessonRepo, profile);
-    lessonService = new LessonService(lessonRepo);
+    lessonService = new LessonService(lessonRepo, profile);
 
     const trace = traceService.capture({
       submitted_by: 'Sarah',
@@ -1460,7 +1641,7 @@ Expected: FAIL — `lessonService.askSeniorApproach is not a function`.
 Add these two methods inside the `LessonRepository` class, after `promote`:
 
 ```typescript
-  searchPromoted(question: string, senior_name?: string): Lesson[] {
+  searchPromoted(question: string, senior_name?: string): LessonWithTrace[] {
     const keywords = question
       .toLowerCase()
       .split(/\W+/)
@@ -1479,12 +1660,17 @@ Add these two methods inside the `LessonRepository` class, after `promote`:
       clauses.push(`(${keywordClauses.join(' OR ')})`);
     }
     const rows = this.db
-      .prepare(`SELECT l.* FROM lessons l JOIN traces t ON t.id = l.trace_id WHERE ${clauses.join(' AND ')} ORDER BY l.promoted_at DESC`)
+      .prepare(
+        `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+         FROM lessons l JOIN traces t ON t.id = l.trace_id
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY l.promoted_at DESC`
+      )
       .all(params) as LessonRow[];
     return rows.map(rowToLesson);
   }
 
-  strugglesFor(junior_name?: string): { lessons: Lesson[]; typology_counts: Record<string, number> } {
+  strugglesFor(junior_name?: string): { lessons: LessonWithTrace[]; typology_counts: Record<string, number> } {
     const clauses = ["l.status = 'promoted'"];
     const params: Record<string, string> = {};
     if (junior_name) {
@@ -1492,7 +1678,12 @@ Add these two methods inside the `LessonRepository` class, after `promote`:
       params.junior_name = junior_name;
     }
     const rows = this.db
-      .prepare(`SELECT l.* FROM lessons l JOIN traces t ON t.id = l.trace_id WHERE ${clauses.join(' AND ')} ORDER BY l.promoted_at DESC`)
+      .prepare(
+        `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+         FROM lessons l JOIN traces t ON t.id = l.trace_id
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY l.promoted_at DESC`
+      )
       .all(params) as LessonRow[];
     const lessons = rows.map(rowToLesson);
     const typology_counts: Record<string, number> = {};
@@ -1508,11 +1699,11 @@ Add these two methods inside the `LessonRepository` class, after `promote`:
 Add these two methods inside the `LessonService` class, after `promote`:
 
 ```typescript
-  askSeniorApproach(question: string, senior_name?: string): Lesson[] {
+  askSeniorApproach(question: string, senior_name?: string): LessonWithTrace[] {
     return this.lessons.searchPromoted(question, senior_name);
   }
 
-  askJuniorStruggles(junior_name?: string): { lessons: Lesson[]; typology_counts: Record<string, number> } {
+  askJuniorStruggles(junior_name?: string): { lessons: LessonWithTrace[]; typology_counts: Record<string, number> } {
     return this.lessons.strugglesFor(junior_name);
   }
 ```
@@ -1540,11 +1731,11 @@ export const askJuniorStrugglesParams = z.object({
 Add these handlers after `promoteLessonHandler`:
 
 ```typescript
-export function askSeniorApproachHandler(ctx: ToolContext, args: z.infer<typeof askSeniorApproachParams>) {
+export async function askSeniorApproachHandler(ctx: ToolContext, args: z.infer<typeof askSeniorApproachParams>) {
   return ctx.lessonService.askSeniorApproach(args.question, args.senior_name);
 }
 
-export function askJuniorStrugglesHandler(ctx: ToolContext, args: z.infer<typeof askJuniorStrugglesParams>) {
+export async function askJuniorStrugglesHandler(ctx: ToolContext, args: z.infer<typeof askJuniorStrugglesParams>) {
   return ctx.lessonService.askJuniorStruggles(args.junior_name);
 }
 ```
@@ -1556,13 +1747,13 @@ Add these two registrations inside `registerTools`, after the `promote_lesson` t
     name: 'ask_senior_approach',
     description: 'Find promoted lessons matching a question, optionally filtered to one senior.',
     parameters: askSeniorApproachParams,
-    execute: async (args) => JSON.stringify(askSeniorApproachHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await askSeniorApproachHandler(ctx, args)),
   });
   server.addTool({
     name: 'ask_junior_struggles',
     description: 'Summarize promoted lessons for a junior (or all juniors) with a typology breakdown.',
     parameters: askJuniorStrugglesParams,
-    execute: async (args) => JSON.stringify(askJuniorStrugglesHandler(ctx, args)),
+    execute: async (args) => JSON.stringify(await askJuniorStrugglesHandler(ctx, args)),
   });
 ```
 
@@ -1744,7 +1935,7 @@ git commit -m "Add MCP prompts: extract-lesson, ask-senior-approach, ask-junior-
 
 **Interfaces:**
 - Consumes: `AppContext` (Task 6), `TraceService`, `LessonService` (Task 5).
-- Produces: `tracesRouter(ctx: AppContext): Router`, `lessonsRouter(ctx: AppContext): Router`, `createServer(ctx: AppContext): Express`. Used by `cli.ts` (Task 10).
+- Produces: `tracesRouter(ctx: AppContext): Router`, `lessonsRouter(ctx: AppContext): Router`, `createServer(ctx: AppContext): Express`. Also exposes `GET /domain` so the web UI can render the active typology categories from `domain.md`. Used by `cli.ts` (Task 10).
 
 - [ ] **Step 1: Write the failing REST tests**
 
@@ -1770,7 +1961,7 @@ function buildTestContext(): AppContext {
   const domainProfile = loadDomainProfile('/nonexistent/domain.md');
   return {
     traceService: new TraceService(traceRepo, lessonRepo, domainProfile),
-    lessonService: new LessonService(lessonRepo),
+    lessonService: new LessonService(lessonRepo, domainProfile),
     domainProfile,
   };
 }
@@ -1827,6 +2018,12 @@ describe('REST API', () => {
     const res = await request(app).get('/lessons/nonexistent-id');
     expect(res.status).toBe(404);
   });
+
+  it('returns the active domain profile categories', async () => {
+    const res = await request(app).get('/domain');
+    expect(res.status).toBe(200);
+    expect(res.body.typology_categories).toContain('substantive_risk');
+  });
 });
 ```
 
@@ -1853,6 +2050,7 @@ const createTraceBody = z.object({
   playbook_text: z.string().optional(),
   context_note: z.string().optional(),
 });
+const traceStatusQuery = z.enum(['captured', 'extracted', 'skipped']).optional();
 
 export function tracesRouter(ctx: AppContext): Router {
   const router = Router();
@@ -1868,8 +2066,12 @@ export function tracesRouter(ctx: AppContext): Router {
   });
 
   router.get('/', (req, res) => {
-    const status = req.query.status as string | undefined;
-    res.json(ctx.traceService.list(status as never));
+    const parsed = traceStatusQuery.safeParse(req.query.status);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    res.json(ctx.traceService.list(parsed.data));
   });
 
   router.get('/:id', (req, res) => {
@@ -1893,29 +2095,35 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 
 const editLessonBody = z.object({
-  quote: z.string().optional(),
-  what_changed: z.string().optional(),
-  why_it_matters: z.string().optional(),
-  typology: z.string().optional(),
+  quote: z.string().min(1).optional(),
+  what_changed: z.string().min(1).optional(),
+  why_it_matters: z.string().min(1).optional(),
+  typology: z.string().min(1).optional(),
   reject: z.boolean().optional(),
 });
 
 const promoteLessonBody = z.object({
-  reviewer: z.string().min(1),
-  quote: z.string().optional(),
-  what_changed: z.string().optional(),
-  why_it_matters: z.string().optional(),
-  typology: z.string().optional(),
+  reviewer: z.string().trim().min(1),
+  quote: z.string().min(1).optional(),
+  what_changed: z.string().min(1).optional(),
+  why_it_matters: z.string().min(1).optional(),
+  typology: z.string().min(1).optional(),
 });
+const lessonStatusQuery = z.enum(['pending_review', 'rejected', 'promoted']).optional();
 
 export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
 
   router.get('/', (req, res) => {
     const { status, typology, playbook_ref, junior_name, senior_name } = req.query;
+    const parsedStatus = lessonStatusQuery.safeParse(status);
+    if (!parsedStatus.success) {
+      res.status(400).json({ error: parsedStatus.error.message });
+      return;
+    }
     res.json(
       ctx.lessonService.list({
-        status: status as never,
+        status: parsedStatus.data,
         typology: typology as string | undefined,
         playbook_ref: playbook_ref as string | undefined,
         junior_name: junior_name as string | undefined,
@@ -1944,7 +2152,8 @@ export function lessonsRouter(ctx: AppContext): Router {
       const lesson = ctx.lessonService.review(req.params.id, { ...fields, status: reject ? 'rejected' : undefined });
       res.json(lesson);
     } catch (err) {
-      res.status(404).json({ error: (err as Error).message });
+      const message = (err as Error).message;
+      res.status(message.includes('not found') ? 404 : 400).json({ error: message });
     }
   });
 
@@ -1958,7 +2167,8 @@ export function lessonsRouter(ctx: AppContext): Router {
       const lesson = ctx.lessonService.promote(req.params.id, parsed.data);
       res.json(lesson);
     } catch (err) {
-      res.status(400).json({ error: (err as Error).message });
+      const message = (err as Error).message;
+      res.status(message.includes('not found') ? 404 : 400).json({ error: message });
     }
   });
 
@@ -1970,6 +2180,8 @@ export function lessonsRouter(ctx: AppContext): Router {
 
 ```typescript
 import express, { type Express } from 'express';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { AppContext } from './context.js';
 import { tracesRouter } from './routes/traces.js';
 import { lessonsRouter } from './routes/lessons.js';
@@ -1979,19 +2191,40 @@ export function createServer(ctx: AppContext): Express {
   app.use(express.json());
   app.use('/traces', tracesRouter(ctx));
   app.use('/lessons', lessonsRouter(ctx));
+  app.get('/domain', (_req, res) => {
+    res.json({
+      typology_categories: ctx.domainProfile.typology_categories,
+    });
+  });
+
+  const webDist = findWebDist();
+  if (webDist) {
+    app.use(express.static(webDist));
+    app.get('*', (_req, res) => res.sendFile(join(webDist, 'index.html')));
+  }
+
   return app;
+}
+
+function findWebDist(): string | undefined {
+  const candidates = [
+    process.env.WEB_DIST_PATH,
+    resolve(process.cwd(), 'web/dist'),
+    resolve(process.cwd(), '../web/dist'),
+  ].filter((path): path is string => Boolean(path));
+  return candidates.find((path) => existsSync(join(path, 'index.html')));
 }
 ```
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `npm run test --workspace backend -- routes`
-Expected: PASS (4 tests passed).
+Expected: PASS (5 tests passed).
 
 - [ ] **Step 7: Run the full backend test suite**
 
 Run: `npm run test --workspace backend`
-Expected: PASS (all tests across all files, backend done).
+Expected: PASS (all tests across all files, backend done). These route tests do not require `web/dist`; static web serving is covered by the Task 11 smoke check after the web bundle exists.
 
 - [ ] **Step 8: Commit**
 
@@ -2008,14 +2241,14 @@ git commit -m "Add REST API for traces and lessons (data-only, no AI reasoning)"
 - Create: `backend/src/cli.ts`
 
 **Interfaces:**
-- Consumes: `buildContext` (Task 6), `createServer` (Task 9), `createMcpServer` (Task 8).
+- Consumes: `buildContext`, `toToolContext` (Task 6), `createServer` (Task 9), `createMcpServer` (Task 8).
 
 - [ ] **Step 1: Create `backend/src/cli.ts`**
 
 ```typescript
 #!/usr/bin/env node
 import 'dotenv/config';
-import { buildContext } from './context.js';
+import { buildContext, toToolContext } from './context.js';
 import { createServer } from './server.js';
 import { createMcpServer } from './mcp/server.js';
 
@@ -2031,7 +2264,7 @@ async function main(): Promise<void> {
   }
 
   if (mode === 'mcp' || mode === 'both') {
-    const server = createMcpServer(ctx, ctx.domainProfile);
+    const server = createMcpServer(toToolContext(ctx), ctx.domainProfile);
     await server.start({ transportType: 'stdio' });
   }
 }
@@ -2042,10 +2275,12 @@ main().catch((err) => {
 });
 ```
 
+This `mcp` mode using `buildContext()` directly (always local, ignoring `~/.birdie/config.json`) is superseded by Task 15's `mcpContext.ts`, which is what a real plugin install uses; this task's manual CLI invocation stays useful for local development and the advanced/manual-registration path (§4.1) throughout.
+
 - [ ] **Step 2: Verify the `web` mode starts and serves requests**
 
 Run: `cd backend && DB_PATH=:memory: PORT=4001 npx tsx src/cli.ts web`
-Expected: prints `Birdie REST API + web UI listening on http://localhost:4001` and keeps running.
+Expected: prints `Birdie REST API + web UI listening on http://localhost:4001` and keeps running. At this point the REST API is available; the static web UI is served by the same process once Task 11 has created `web/dist`.
 
 In a second terminal, run:
 
@@ -2085,7 +2320,7 @@ git commit -m "Add birdie CLI entrypoint (mcp / web / both run modes)"
 - Create: `web/src/App.tsx`
 
 **Interfaces:**
-- Consumes: the REST API from Task 9 (`POST /traces`, `GET /lessons`, `PATCH /lessons/:id`, `POST /lessons/:id/promote`) via `fetch`.
+- Consumes: the REST API from Task 9 (`POST /traces`, `GET /lessons`, `PATCH /lessons/:id`, `POST /lessons/:id/promote`, `GET /domain`) via `fetch`.
 - No automated test suite for this task, per the design spec's testing scope (§12) — verified by a successful build and a manual smoke check.
 
 - [ ] **Step 1: Create `web/package.json`**
@@ -2216,6 +2451,10 @@ export interface Lesson {
 export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by' | 'submitted_by_role'> &
   Partial<Pick<Trace, 'junior_name' | 'senior_name' | 'playbook_ref' | 'playbook_text' | 'context_note'>>;
 
+export interface DomainProfile {
+  typology_categories: string[];
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -2235,6 +2474,10 @@ export function captureTrace(input: NewTrace): Promise<Trace> {
 export function listLessons(status?: Lesson['status']): Promise<Lesson[]> {
   const query = status ? `?status=${status}` : '';
   return fetch(`/lessons${query}`).then((res) => json<Lesson[]>(res));
+}
+
+export function getDomainProfile(): Promise<DomainProfile> {
+  return fetch('/domain').then((res) => json<DomainProfile>(res));
 }
 
 export function reviewLesson(
@@ -2353,7 +2596,7 @@ export default function CaptureForm({ onCaptured }: Props) {
 
 ```typescript
 import { useEffect, useState } from 'react';
-import { listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
+import { getDomainProfile, listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
 
 interface Props {
   refreshSignal: number;
@@ -2361,6 +2604,7 @@ interface Props {
 
 export default function ReviewList({ refreshSignal }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [typologies, setTypologies] = useState<string[]>([]);
   const [reviewerById, setReviewerById] = useState<Record<string, string>>({});
 
   async function refresh() {
@@ -2368,6 +2612,7 @@ export default function ReviewList({ refreshSignal }: Props) {
   }
 
   useEffect(() => {
+    getDomainProfile().then((profile) => setTypologies(profile.typology_categories));
     refresh();
   }, [refreshSignal]);
 
@@ -2389,6 +2634,16 @@ export default function ReviewList({ refreshSignal }: Props) {
 
   async function handleReject(lesson: Lesson) {
     await reviewLesson(lesson.id, { reject: true });
+    await refresh();
+  }
+
+  async function handleSaveDraft(lesson: Lesson) {
+    await reviewLesson(lesson.id, {
+      quote: lesson.quote,
+      what_changed: lesson.what_changed,
+      why_it_matters: lesson.why_it_matters,
+      typology: lesson.typology,
+    });
     await refresh();
   }
 
@@ -2428,7 +2683,13 @@ export default function ReviewList({ refreshSignal }: Props) {
           </label>
           <label>
             Typology
-            <input value={lesson.typology} onChange={(e) => updateField(lesson.id, 'typology', e.target.value)} />
+            <select value={lesson.typology} onChange={(e) => updateField(lesson.id, 'typology', e.target.value)}>
+              {typologies.map((typology) => (
+                <option key={typology} value={typology}>
+                  {typology}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Reviewer name
@@ -2438,6 +2699,7 @@ export default function ReviewList({ refreshSignal }: Props) {
             />
           </label>
           <button onClick={() => handlePromote(lesson)}>Confirm & Promote</button>
+          <button onClick={() => handleSaveDraft(lesson)}>Save as Draft</button>
           <button onClick={() => handleReject(lesson)}>Reject</button>
         </div>
       ))}
@@ -2477,7 +2739,7 @@ Expected: `tsc -b && vite build` completes with no type errors, producing `web/d
 
 - [ ] **Step 11: Manual smoke check**
 
-Run: `cd backend && DB_PATH=./data/birdie.db PORT=4000 npx tsx src/cli.ts web` in one terminal, and `npm run dev --workspace web` in another. Open the printed Vite URL in a browser, submit a trace via the Capture form, and confirm no console errors. (The Review queue will show nothing until a lesson is extracted via an MCP-connected assistant, which requires Task 12's registration — that's expected at this point.)
+Run: `npm run build --workspace web`, then run `cd backend && DB_PATH=./data/birdie.db PORT=4000 npx tsx src/cli.ts web`. Open `http://localhost:4000` in a browser, submit a trace via the Capture form, and confirm no console errors. Also run `npm run dev --workspace web` if you want Vite hot reload during iteration; it should proxy API calls to `:4000`. (The Review queue will show nothing until a lesson is extracted via an MCP-connected assistant, which requires registering the MCP server with a host — that's expected at this point.)
 
 - [ ] **Step 12: Commit**
 
@@ -2488,56 +2750,1486 @@ git commit -m "Add one-page web UI: capture form + review queue"
 
 ---
 
-### Task 12: Claude Code Skill wrapper
+### Task 12: Config module (`~/.birdie/config.json`)
+
+**Files:**
+- Create: `backend/src/config.ts`
+- Test: `backend/test/config.test.ts`
+
+**Interfaces:**
+- Produces: `interface BirdieConfig { mode: 'local' | 'remote'; server_url?: string }`; `getBirdieHome(): string`; `getConfigPath(): string`; `readConfig(): BirdieConfig | undefined`; `writeConfig(config: BirdieConfig): void`; `resolveDbPath(): string`. Used by `complete_setup` (Task 13), domain profile resolution (Task 14), and `mcpContext.ts` (Task 15).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/test/config.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { getBirdieHome, getConfigPath, readConfig, resolveDbPath, writeConfig } from '../src/config.js';
+
+describe('config', () => {
+  let dir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-config-'));
+    process.env.BIRDIE_CONFIG_PATH = join(dir, 'config.json');
+    originalHome = process.env.HOME;
+  });
+
+  afterEach(() => {
+    delete process.env.BIRDIE_CONFIG_PATH;
+    delete process.env.DB_PATH;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('resolves the config path from BIRDIE_CONFIG_PATH', () => {
+    expect(getConfigPath()).toBe(join(dir, 'config.json'));
+  });
+
+  it('returns undefined when no config file exists yet (first run)', () => {
+    expect(readConfig()).toBeUndefined();
+  });
+
+  it('round-trips a local config', () => {
+    writeConfig({ mode: 'local' });
+    expect(readConfig()).toEqual({ mode: 'local' });
+  });
+
+  it('round-trips a remote config with a server_url', () => {
+    writeConfig({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+    expect(readConfig()).toEqual({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+  });
+
+  it('treats a corrupt config file as first-run instead of throwing', () => {
+    writeConfig({ mode: 'local' });
+    writeFileSync(getConfigPath(), '{ not valid json');
+    expect(readConfig()).toBeUndefined();
+  });
+
+  it('resolves the db path from DB_PATH when set', () => {
+    process.env.DB_PATH = join(dir, 'custom.db');
+    expect(resolveDbPath()).toBe(join(dir, 'custom.db'));
+  });
+
+  it('defaults the db path under the birdie home directory', () => {
+    delete process.env.DB_PATH;
+    process.env.HOME = dir;
+    expect(getBirdieHome()).toBe(join(dir, '.birdie'));
+    expect(resolveDbPath()).toBe(join(dir, '.birdie', 'birdie.db'));
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- config`
+Expected: FAIL — `Cannot find module '../src/config.js'`.
+
+- [ ] **Step 3: Create `backend/src/config.ts`**
+
+```typescript
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+export interface BirdieConfig {
+  mode: 'local' | 'remote';
+  server_url?: string;
+}
+
+export function getBirdieHome(): string {
+  return join(homedir(), '.birdie');
+}
+
+export function getConfigPath(): string {
+  return process.env.BIRDIE_CONFIG_PATH ?? join(getBirdieHome(), 'config.json');
+}
+
+export function readConfig(): BirdieConfig | undefined {
+  const path = getConfigPath();
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    if (parsed.mode !== 'local' && parsed.mode !== 'remote') return undefined;
+    if (parsed.mode === 'remote' && typeof parsed.server_url !== 'string') return undefined;
+    return parsed as BirdieConfig;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeConfig(config: BirdieConfig): void {
+  const path = getConfigPath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(config, null, 2));
+}
+
+export function resolveDbPath(): string {
+  return process.env.DB_PATH ?? join(getBirdieHome(), 'birdie.db');
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- config`
+Expected: PASS (7 tests passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/config.ts backend/test/config.test.ts
+git commit -m "Add config module for first-run detection (~/.birdie/config.json)"
+```
+
+---
+
+### Task 13: `complete_setup` MCP tool and local default paths under `~/.birdie`
+
+**Files:**
+- Modify: `backend/src/context.ts` (use `resolveDbPath()` instead of an inline default)
+- Modify: `backend/src/mcp/tools.ts` (add the `complete_setup` tool)
+- Test: Create `backend/test/setup.test.ts`
+
+**Interfaces:**
+- Consumes: `resolveDbPath`, `readConfig`, `writeConfig`, `BirdieConfig` (Task 12), `openDb` (Task 2).
+- Produces (added to `mcp/tools.ts`): `completeSetupParams`, `async completeSetupHandler(args): Promise<BirdieConfig>`, registered as the `complete_setup` MCP tool. Unlike every other tool in this file, `complete_setup` does not take a `ToolContext` — it operates directly on `config.ts` / `db.ts`, because it's what makes a working `ToolContext` possible in the first place (Task 15).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/test/setup.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readConfig } from '../src/config.js';
+import { completeSetupHandler } from '../src/mcp/tools.js';
+
+describe('completeSetupHandler', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-setup-'));
+    process.env.BIRDIE_CONFIG_PATH = join(dir, 'config.json');
+    process.env.DB_PATH = join(dir, 'birdie.db');
+  });
+
+  afterEach(() => {
+    delete process.env.BIRDIE_CONFIG_PATH;
+    delete process.env.DB_PATH;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes a local config and creates the database file', async () => {
+    await completeSetupHandler({ mode: 'local' });
+    expect(readConfig()).toEqual({ mode: 'local' });
+    expect(existsSync(join(dir, 'birdie.db'))).toBe(true);
+  });
+
+  it('writes a remote config with the given server_url', async () => {
+    await completeSetupHandler({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+    expect(readConfig()).toEqual({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+    expect(existsSync(join(dir, 'birdie.db'))).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- setup`
+Expected: FAIL — `completeSetupHandler is not a function` (not exported yet).
+
+- [ ] **Step 3: Modify `backend/src/context.ts`**
+
+Add this import near the top:
+
+```typescript
+import { resolveDbPath } from './config.js';
+```
+
+Replace the `dbPath` line inside `buildContext`:
+
+```typescript
+  const dbPath = resolveDbPath();
+```
+
+- [ ] **Step 4: Modify `backend/src/mcp/tools.ts`**
+
+Add these imports near the top:
+
+```typescript
+import { readConfig, resolveDbPath, writeConfig, type BirdieConfig } from '../config.js';
+import { openDb } from '../db.js';
+```
+
+Add this after `askJuniorStrugglesHandler`:
+
+```typescript
+export const completeSetupParams = z.union([
+  z.object({ mode: z.literal('local') }),
+  z.object({ mode: z.literal('remote'), server_url: z.string().url() }),
+]);
+
+export async function completeSetupHandler(args: z.infer<typeof completeSetupParams>): Promise<BirdieConfig> {
+  if (args.mode === 'local') {
+    writeConfig({ mode: 'local' });
+    openDb(resolveDbPath()); // creates the file and runs schema migration if it doesn't exist yet
+  } else {
+    writeConfig({ mode: 'remote', server_url: args.server_url });
+  }
+  return readConfig()!;
+}
+```
+
+Add this registration inside `registerTools`, after the `ask_junior_struggles` registration:
+
+```typescript
+  server.addTool({
+    name: 'complete_setup',
+    description:
+      "Finish Birdie's first-run setup. Pass { mode: 'local' } to store data on this device, or { mode: 'remote', server_url } to use a team's existing Birdie server.",
+    parameters: completeSetupParams,
+    execute: async (args) => JSON.stringify(await completeSetupHandler(args)),
+  });
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- setup`
+Expected: PASS (2 tests passed).
+
+- [ ] **Step 6: Run the full backend test suite to verify nothing broke**
+
+Run: `npm run test --workspace backend`
+Expected: PASS (all tests across all files still pass).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/src/context.ts backend/src/mcp/tools.ts backend/test/setup.test.ts
+git commit -m "Add complete_setup MCP tool and move local default paths under ~/.birdie"
+```
+
+---
+
+### Task 14: Guided domain-profile setup
+
+**Files:**
+- Modify: `backend/src/domain.ts` (add `resolveDomainProfilePath`, `saveDomainProfile`)
+- Modify: `backend/src/context.ts` (use `resolveDomainProfilePath()`)
+- Modify: `backend/src/mcp/tools.ts` (add the `save_domain_profile` tool)
+- Test: Modify `backend/test/domain.test.ts`
+- Test: Modify `backend/test/setup.test.ts`
+
+**Interfaces:**
+- Produces (added to `domain.ts`): `resolveDomainProfilePath(): string`, `saveDomainProfile(content: string): void`. Used by `context.ts`, `mcp/tools.ts`, and `mcpContext.ts` (Task 15).
+
+- [ ] **Step 1: Write the failing tests**
+
+Add these imports to the top of `backend/test/domain.test.ts` (alongside the existing ones):
+
+```typescript
+import { mkdtempSync, rmSync } from 'node:fs';
+```
+
+and extend the existing `import { loadDomainProfile, parseTypologyCategories } from '../src/domain.js';` line to:
+
+```typescript
+import { loadDomainProfile, parseTypologyCategories, resolveDomainProfilePath, saveDomainProfile } from '../src/domain.js';
+```
+
+Append this describe block to the end of the file:
+
+```typescript
+describe('resolveDomainProfilePath / saveDomainProfile', () => {
+  let dir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-domainpath-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = dir;
+    delete process.env.DOMAIN_PROFILE_PATH;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    delete process.env.DOMAIN_PROFILE_PATH;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('falls back to DOMAIN_PROFILE_PATH when no customized profile exists', () => {
+    process.env.DOMAIN_PROFILE_PATH = '/some/domain.md';
+    expect(resolveDomainProfilePath()).toBe('/some/domain.md');
+  });
+
+  it('falls back to ./domain.md when neither a customized profile nor DOMAIN_PROFILE_PATH exists', () => {
+    expect(resolveDomainProfilePath()).toBe('./domain.md');
+  });
+
+  it('prefers ~/.birdie/domain.md once one has been saved', () => {
+    saveDomainProfile('# Domain\ncustom\n\n# Typology\n- foo: bar\n\n# What counts as mentorship-worthy\nx\n');
+    expect(resolveDomainProfilePath()).toBe(join(dir, '.birdie', 'domain.md'));
+    expect(loadDomainProfile(resolveDomainProfilePath()).typology_categories).toEqual(['foo']);
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- domain`
+Expected: FAIL — `resolveDomainProfilePath is not a function`.
+
+- [ ] **Step 3: Modify `backend/src/domain.ts`**
+
+Change the top import line from `import { readFileSync } from 'node:fs';` to:
+
+```typescript
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { getBirdieHome } from './config.js';
+```
+
+Add these functions after `loadDomainProfile`:
+
+```typescript
+export function resolveDomainProfilePath(): string {
+  const customized = join(getBirdieHome(), 'domain.md');
+  if (existsSync(customized)) return customized;
+  return process.env.DOMAIN_PROFILE_PATH ?? './domain.md';
+}
+
+export function saveDomainProfile(content: string): void {
+  const home = getBirdieHome();
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, 'domain.md'), content);
+}
+```
+
+- [ ] **Step 4: Modify `backend/src/context.ts`**
+
+Change the import from `./domain.js` to include `resolveDomainProfilePath`, and replace the `domainProfilePath` line inside `buildContext`:
+
+```typescript
+import { loadDomainProfile, resolveDomainProfilePath, type DomainProfile } from './domain.js';
+...
+  const domainProfilePath = resolveDomainProfilePath();
+```
+
+- [ ] **Step 5: Modify `backend/src/mcp/tools.ts`**
+
+Add this import near the top:
+
+```typescript
+import { saveDomainProfile } from '../domain.js';
+```
+
+Add this after `completeSetupHandler`:
+
+```typescript
+export const saveDomainProfileParams = z.object({ content: z.string().min(1) });
+
+export async function saveDomainProfileHandler(args: z.infer<typeof saveDomainProfileParams>): Promise<{ saved: true }> {
+  saveDomainProfile(args.content);
+  return { saved: true };
+}
+```
+
+Add this registration inside `registerTools`, after `complete_setup`:
+
+```typescript
+  server.addTool({
+    name: 'save_domain_profile',
+    description:
+      "Write a customized domain profile (typology categories and what's mentorship-worthy) to ~/.birdie/domain.md, produced from the setup interview.",
+    parameters: saveDomainProfileParams,
+    execute: async (args) => JSON.stringify(await saveDomainProfileHandler(args)),
+  });
+```
+
+- [ ] **Step 6: Write the failing test for `saveDomainProfileHandler`**
+
+Append to `backend/test/setup.test.ts` (add `mkdtempSync, rmSync` and `join`/`tmpdir` imports if not already present, plus `saveDomainProfileHandler` and `resolveDomainProfilePath`):
+
+```typescript
+import { saveDomainProfileHandler } from '../src/mcp/tools.js';
+import { resolveDomainProfilePath } from '../src/domain.js';
+
+describe('saveDomainProfileHandler', () => {
+  let dir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-domain-setup-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = dir;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes the profile so resolveDomainProfilePath picks it up', async () => {
+    await saveDomainProfileHandler({
+      content: '# Domain\naudit\n\n# Typology\n- materiality: x\n\n# What counts as mentorship-worthy\ny\n',
+    });
+    expect(resolveDomainProfilePath()).toBe(join(dir, '.birdie', 'domain.md'));
+  });
+});
+```
+
+- [ ] **Step 7: Run the full backend test suite**
+
+Run: `npm run test --workspace backend`
+Expected: PASS (all tests across all files still pass).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add backend/src/domain.ts backend/src/context.ts backend/src/mcp/tools.ts backend/test/domain.test.ts backend/test/setup.test.ts
+git commit -m "Add guided domain-profile setup: save_domain_profile tool and ~/.birdie/domain.md resolution"
+```
+
+---
+
+### Task 15: Remote-sync REST routes, remote services, and the MCP-only context builder
+
+**Files:**
+- Modify: `backend/src/routes/traces.ts` (add `POST /:id/skip`, `POST /:id/extract`)
+- Modify: `backend/src/routes/lessons.ts` (add `GET /ask/senior-approach`, `GET /ask/junior-struggles`)
+- Create: `backend/src/services/remoteRequest.ts`
+- Create: `backend/src/services/remoteTraceService.ts`
+- Create: `backend/src/services/remoteLessonService.ts`
+- Create: `backend/src/mcpContext.ts`
+- Modify: `backend/src/mcp/tools.ts` (`registerTools` takes `getCtx: () => ToolContext` instead of a pre-built context)
+- Modify: `backend/src/mcp/server.ts` (`createMcpServer` takes `getCtx`)
+- Modify: `backend/src/cli.ts` (`mcp` mode uses `buildMcpContext`)
+- Test: Modify `backend/test/routes.test.ts`
+- Test: Create `backend/test/remoteService.test.ts`
+- Test: Create `backend/test/mcpContext.test.ts`
+
+**Interfaces:**
+- Consumes: `TraceServiceLike`, `LessonServiceLike` (Task 1), `readConfig` (Task 12), `buildContext`, `toToolContext` (Task 6).
+- Produces: `remoteRequest<T>(serverUrl: string, path: string, init?: RequestInit): Promise<T>`; `class RemoteTraceService` / `class RemoteLessonService` (both `constructor(serverUrl: string)`), each satisfying `TraceServiceLike` / `LessonServiceLike`; `class BirdieNotConfiguredError extends Error`; `buildMcpContext(): ToolContext`. This is the code behind design spec §4.3 — local vs. shared server is decided once per tool call, not baked in at process startup, so the same running MCP server can go from "not configured" to "configured" mid-session as soon as `complete_setup` runs.
+
+- [ ] **Step 1: Write the failing REST route tests**
+
+Append to `backend/test/routes.test.ts`:
+
+```typescript
+  it('skips a trace via POST /traces/:id/skip', async () => {
+    const trace = ctx.traceService.capture({
+      submitted_by: 'Jane',
+      submitted_by_role: 'junior',
+      before_text: 'teh',
+      after_text: 'the',
+    });
+    const res = await request(app).post(`/traces/${trace.id}/skip`).send({ reason: 'Typo fix only.' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('skipped');
+  });
+
+  it('extracts a lesson via POST /traces/:id/extract', async () => {
+    const trace = ctx.traceService.capture({
+      submitted_by: 'Jane',
+      submitted_by_role: 'junior',
+      before_text: 'uncapped indemnity',
+      after_text: 'capped indemnity',
+    });
+    const res = await request(app).post(`/traces/${trace.id}/extract`).send({
+      quote: 'uncapped indemnity',
+      what_changed: 'Capped it.',
+      why_it_matters: 'Risk control.',
+      typology: 'substantive_risk',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.quote_verified).toBe(true);
+  });
+
+  it('answers ask/senior-approach and ask/junior-struggles', async () => {
+    const trace = ctx.traceService.capture({
+      submitted_by: 'Sarah',
+      submitted_by_role: 'senior',
+      junior_name: 'Jane',
+      senior_name: 'Sarah',
+      before_text: 'uncapped indemnity',
+      after_text: 'capped indemnity',
+    });
+    const lesson = ctx.traceService.extract({
+      trace_id: trace.id,
+      quote: 'uncapped indemnity',
+      what_changed: 'Capped it.',
+      why_it_matters: 'Risk control.',
+      typology: 'substantive_risk',
+    });
+    ctx.lessonService.promote(lesson.id, { reviewer: 'Sarah' });
+
+    const approach = await request(app).get('/lessons/ask/senior-approach?question=indemnity&senior_name=Sarah');
+    expect(approach.status).toBe(200);
+    expect(approach.body).toHaveLength(1);
+
+    const struggles = await request(app).get('/lessons/ask/junior-struggles?junior_name=Jane');
+    expect(struggles.status).toBe(200);
+    expect(struggles.body.typology_counts).toEqual({ substantive_risk: 1 });
+  });
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- routes`
+Expected: FAIL — `404` responses (routes don't exist yet).
+
+- [ ] **Step 3: Modify `backend/src/routes/traces.ts`**
+
+Add this after the `traceStatusQuery` definition:
+
+```typescript
+const skipTraceBody = z.object({ reason: z.string().min(1) });
+const extractTraceBody = z.object({
+  quote: z.string().min(1),
+  what_changed: z.string().min(1),
+  why_it_matters: z.string().min(1),
+  typology: z.string().min(1),
+  playbook_alignment: z.enum(['aligned', 'diverges', 'not_applicable']).optional(),
+  playbook_note: z.string().optional(),
+});
+```
+
+Add these routes inside `tracesRouter`, before `return router;`:
+
+```typescript
+  router.post('/:id/skip', (req, res) => {
+    const parsed = skipTraceBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    try {
+      res.json(ctx.traceService.skip(req.params.id, parsed.data.reason));
+    } catch (err) {
+      const message = (err as Error).message;
+      res.status(message.includes('not found') ? 404 : 400).json({ error: message });
+    }
+  });
+
+  router.post('/:id/extract', (req, res) => {
+    const parsed = extractTraceBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    try {
+      res.json(ctx.traceService.extract({ trace_id: req.params.id, ...parsed.data }));
+    } catch (err) {
+      const message = (err as Error).message;
+      res.status(message.includes('not found') ? 404 : 400).json({ error: message });
+    }
+  });
+```
+
+- [ ] **Step 4: Modify `backend/src/routes/lessons.ts`**
+
+Add these routes inside `lessonsRouter`, immediately after `router.get('/', ...)` and **before** `router.get('/:id', ...)` — Express matches routes in registration order, and `/:id` would otherwise swallow `/ask/senior-approach` as `id="ask"`:
+
+```typescript
+  router.get('/ask/senior-approach', (req, res) => {
+    const { question, senior_name } = req.query;
+    if (typeof question !== 'string' || question.length === 0) {
+      res.status(400).json({ error: 'question is required' });
+      return;
+    }
+    res.json(ctx.lessonService.askSeniorApproach(question, senior_name as string | undefined));
+  });
+
+  router.get('/ask/junior-struggles', (req, res) => {
+    const { junior_name } = req.query;
+    res.json(ctx.lessonService.askJuniorStruggles(junior_name as string | undefined));
+  });
+```
+
+- [ ] **Step 5: Run the route tests to verify they pass**
+
+Run: `npm run test --workspace backend -- routes`
+Expected: PASS (8 tests passed).
+
+- [ ] **Step 6: Write the failing remote-service tests**
+
+Create `backend/test/remoteService.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { RemoteTraceService } from '../src/services/remoteTraceService.js';
+import { RemoteLessonService } from '../src/services/remoteLessonService.js';
+
+function jsonResponse(body: unknown, ok = true, status = 200): Response {
+  return { ok, status, json: async () => body } as Response;
+}
+
+describe('RemoteTraceService / RemoteLessonService', () => {
+  const serverUrl = 'http://birdie.internal:4000';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('capture posts to /traces and returns the parsed trace', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 't1', status: 'captured' }));
+    const service = new RemoteTraceService(serverUrl);
+    const trace = await service.capture({
+      before_text: 'a',
+      after_text: 'b',
+      submitted_by: 'Jane',
+      submitted_by_role: 'junior',
+    });
+    expect(trace).toEqual({ id: 't1', status: 'captured' });
+    expect(fetchMock).toHaveBeenCalledWith(`${serverUrl}/traces`, expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('extract posts to /traces/:id/extract', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'l1', quote_verified: true }));
+    const service = new RemoteTraceService(serverUrl);
+    const lesson = await service.extract({
+      trace_id: 't1',
+      quote: 'a',
+      what_changed: 'x',
+      why_it_matters: 'y',
+      typology: 'other',
+    });
+    expect(lesson).toEqual({ id: 'l1', quote_verified: true });
+    expect(fetchMock).toHaveBeenCalledWith(`${serverUrl}/traces/t1/extract`, expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('surfaces an unreachable server as a clear error', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const service = new RemoteTraceService(serverUrl);
+    await expect(service.list()).rejects.toThrow(/Can't reach the Birdie server/);
+  });
+
+  it('askSeniorApproach calls the ask/senior-approach endpoint with query params', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'l1' }]));
+    const service = new RemoteLessonService(serverUrl);
+    const results = await service.askSeniorApproach('indemnity', 'Sarah');
+    expect(results).toEqual([{ id: 'l1' }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${serverUrl}/lessons/ask/senior-approach?question=indemnity&senior_name=Sarah`,
+      undefined
+    );
+  });
+
+  it('get returns undefined when the remote lesson is not found', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'Lesson not found' }, false, 404));
+    const service = new RemoteLessonService(serverUrl);
+    expect(await service.get('nope')).toBeUndefined();
+  });
+
+  it('surfaces a non-ok response body error message for other failures', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'Internal server error' }, false, 500));
+    const service = new RemoteLessonService(serverUrl);
+    await expect(service.get('boom')).rejects.toThrow('Internal server error');
+  });
+});
+```
+
+- [ ] **Step 7: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- remoteService`
+Expected: FAIL — `Cannot find module '../src/services/remoteTraceService.js'`.
+
+- [ ] **Step 8: Create `backend/src/services/remoteRequest.ts`**
+
+```typescript
+export async function remoteRequest<T>(serverUrl: string, path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${serverUrl}${path}`, init);
+  } catch {
+    throw new Error(`Can't reach the Birdie server at ${serverUrl} - check the URL or ask whoever set it up.`);
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? `Birdie server request failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+```
+
+- [ ] **Step 9: Create `backend/src/services/remoteTraceService.ts`**
+
+```typescript
+import { remoteRequest } from './remoteRequest.js';
+import type { LessonWithTrace, NewExtraction, NewTrace, Trace, TraceStatus } from '../types.js';
+
+export class RemoteTraceService {
+  constructor(private serverUrl: string) {}
+
+  capture(input: NewTrace): Promise<Trace> {
+    return remoteRequest(this.serverUrl, '/traces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  }
+
+  get(id: string): Promise<Trace | undefined> {
+    return remoteRequest<Trace>(this.serverUrl, `/traces/${id}`).catch((err) => {
+      if ((err as Error).message.includes('not found')) return undefined;
+      throw err;
+    });
+  }
+
+  list(status?: TraceStatus): Promise<Trace[]> {
+    const query = status ? `?status=${status}` : '';
+    return remoteRequest(this.serverUrl, `/traces${query}`);
+  }
+
+  skip(id: string, reason: string): Promise<Trace> {
+    return remoteRequest(this.serverUrl, `/traces/${id}/skip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  extract(input: NewExtraction): Promise<LessonWithTrace> {
+    const { trace_id, ...body } = input;
+    return remoteRequest(this.serverUrl, `/traces/${trace_id}/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+}
+```
+
+- [ ] **Step 10: Create `backend/src/services/remoteLessonService.ts`**
+
+```typescript
+import { remoteRequest } from './remoteRequest.js';
+import type { LessonEdit, LessonFilters, LessonWithTrace, PromotePayload } from '../types.js';
+
+export class RemoteLessonService {
+  constructor(private serverUrl: string) {}
+
+  list(filters: LessonFilters): Promise<LessonWithTrace[]> {
+    const entries = Object.entries(filters).filter(([, v]) => v !== undefined) as [string, string][];
+    const query = entries.length ? `?${new URLSearchParams(entries).toString()}` : '';
+    return remoteRequest(this.serverUrl, `/lessons${query}`);
+  }
+
+  get(id: string): Promise<LessonWithTrace | undefined> {
+    return remoteRequest<LessonWithTrace>(this.serverUrl, `/lessons/${id}`).catch((err) => {
+      if ((err as Error).message.includes('not found')) return undefined;
+      throw err;
+    });
+  }
+
+  review(id: string, changes: LessonEdit): Promise<LessonWithTrace> {
+    return remoteRequest(this.serverUrl, `/lessons/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+  }
+
+  promote(id: string, payload: PromotePayload): Promise<LessonWithTrace> {
+    return remoteRequest(this.serverUrl, `/lessons/${id}/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  askSeniorApproach(question: string, senior_name?: string): Promise<LessonWithTrace[]> {
+    const params = new URLSearchParams({ question, ...(senior_name ? { senior_name } : {}) });
+    return remoteRequest(this.serverUrl, `/lessons/ask/senior-approach?${params.toString()}`);
+  }
+
+  askJuniorStruggles(junior_name?: string): Promise<{ lessons: LessonWithTrace[]; typology_counts: Record<string, number> }> {
+    const params = new URLSearchParams(junior_name ? { junior_name } : {});
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return remoteRequest(this.serverUrl, `/lessons/ask/junior-struggles${query}`);
+  }
+}
+```
+
+- [ ] **Step 11: Run the remote-service tests to verify they pass**
+
+Run: `npm run test --workspace backend -- remoteService`
+Expected: PASS (6 tests passed).
+
+- [ ] **Step 12: Modify `backend/src/mcp/tools.ts` so `registerTools` takes a context getter, not a fixed context**
+
+Replace the `registerTools` signature and every `execute` callback's use of `ctx` with `getCtx()`:
+
+```typescript
+export function registerTools(server: FastMCP, getCtx: () => ToolContext): void {
+  server.addTool({
+    name: 'capture_trace',
+    description: 'Capture a before/after edit as a trace for later extraction into a mentorship lesson.',
+    parameters: captureTraceParams,
+    execute: async (args) => JSON.stringify(await captureTraceHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'get_trace',
+    description: "Read a trace's before/after/playbook text to reason over before extracting a lesson.",
+    parameters: getTraceParams,
+    execute: async (args) => JSON.stringify(await getTraceHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'skip_extraction',
+    description: 'Mark a trace as not mentorship-worthy instead of forcing a lesson out of it.',
+    parameters: skipExtractionParams,
+    execute: async (args) => JSON.stringify(await skipExtractionHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'save_extraction',
+    description: 'Persist an extracted lesson: quote, what changed, why it matters, typology, and playbook alignment.',
+    parameters: saveExtractionParams,
+    execute: async (args) => JSON.stringify(await saveExtractionHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'list_lessons',
+    description: 'List lessons, filterable by status, typology, playbook_ref, junior_name, senior_name.',
+    parameters: listLessonsParams,
+    execute: async (args) => JSON.stringify(await listLessonsHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'review_lesson',
+    description: 'Edit a pending lesson in place, or reject it.',
+    parameters: reviewLessonParams,
+    execute: async (args) => JSON.stringify(await reviewLessonHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'promote_lesson',
+    description: 'Promote a reviewed lesson into the shared pool, requiring a reviewer name.',
+    parameters: promoteLessonParams,
+    execute: async (args) => JSON.stringify(await promoteLessonHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'ask_senior_approach',
+    description: 'Find promoted lessons matching a question, optionally filtered to one senior.',
+    parameters: askSeniorApproachParams,
+    execute: async (args) => JSON.stringify(await askSeniorApproachHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'ask_junior_struggles',
+    description: 'Summarize promoted lessons for a junior (or all juniors) with a typology breakdown.',
+    parameters: askJuniorStrugglesParams,
+    execute: async (args) => JSON.stringify(await askJuniorStrugglesHandler(getCtx(), args)),
+  });
+  server.addTool({
+    name: 'complete_setup',
+    description:
+      "Finish Birdie's first-run setup. Pass { mode: 'local' } to store data on this device, or { mode: 'remote', server_url } to use a team's existing Birdie server.",
+    parameters: completeSetupParams,
+    execute: async (args) => JSON.stringify(await completeSetupHandler(args)),
+  });
+  server.addTool({
+    name: 'save_domain_profile',
+    description:
+      "Write a customized domain profile (typology categories and what's mentorship-worthy) to ~/.birdie/domain.md, produced from the setup interview.",
+    parameters: saveDomainProfileParams,
+    execute: async (args) => JSON.stringify(await saveDomainProfileHandler(args)),
+  });
+}
+```
+
+Note what changed and what didn't: every exported `...Handler` function (`captureTraceHandler`, `askSeniorApproachHandler`, etc.) still takes a concrete `ctx: ToolContext` exactly as before — Tasks 6/7's tests, which call these handlers directly, are unaffected. Only `registerTools` itself now asks for a context *getter* and calls it fresh inside each tool's `execute`, so a context built after startup (once `complete_setup` has run) is picked up on the very next tool call, and `complete_setup` / `save_domain_profile` — which don't call `getCtx()` at all — work even before that.
+
+- [ ] **Step 13: Modify `backend/src/mcp/server.ts`**
+
+```typescript
+import { FastMCP } from 'fastmcp';
+import { registerTools, type ToolContext } from './tools.js';
+import { registerPrompts } from './prompts.js';
+import type { DomainProfile } from '../domain.js';
+
+export function createMcpServer(getCtx: () => ToolContext, domainProfile: DomainProfile): FastMCP {
+  const server = new FastMCP({ name: 'birdie', version: '0.1.0' });
+  registerTools(server, getCtx);
+  registerPrompts(server, domainProfile);
+  return server;
+}
+```
+
+- [ ] **Step 14: Write the failing test for `mcpContext.ts`**
+
+Create `backend/test/mcpContext.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeConfig } from '../src/config.js';
+import { buildMcpContext, BirdieNotConfiguredError } from '../src/mcpContext.js';
+
+describe('buildMcpContext', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-mcpctx-'));
+    process.env.BIRDIE_CONFIG_PATH = join(dir, 'config.json');
+    process.env.DB_PATH = join(dir, 'birdie.db');
+    process.env.DOMAIN_PROFILE_PATH = '/nonexistent/domain.md';
+  });
+
+  afterEach(() => {
+    delete process.env.BIRDIE_CONFIG_PATH;
+    delete process.env.DB_PATH;
+    delete process.env.DOMAIN_PROFILE_PATH;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throws BirdieNotConfiguredError when no config exists yet', () => {
+    expect(() => buildMcpContext()).toThrow(BirdieNotConfiguredError);
+  });
+
+  it('builds a local ToolContext backed by SQLite when mode is local', async () => {
+    writeConfig({ mode: 'local' });
+    const ctx = buildMcpContext();
+    const trace = await ctx.traceService.capture({
+      before_text: 'a',
+      after_text: 'b',
+      submitted_by: 'Jane',
+      submitted_by_role: 'junior',
+    });
+    expect(trace.status).toBe('captured');
+  });
+
+  it('builds a remote ToolContext backed by RemoteTraceService/RemoteLessonService when mode is remote', () => {
+    writeConfig({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+    const ctx = buildMcpContext();
+    expect(ctx.traceService.constructor.name).toBe('RemoteTraceService');
+    expect(ctx.lessonService.constructor.name).toBe('RemoteLessonService');
+  });
+});
+```
+
+- [ ] **Step 15: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- mcpContext`
+Expected: FAIL — `Cannot find module '../src/mcpContext.js'`.
+
+- [ ] **Step 16: Create `backend/src/mcpContext.ts`**
+
+```typescript
+import { buildContext, toToolContext } from './context.js';
+import { readConfig } from './config.js';
+import { RemoteTraceService } from './services/remoteTraceService.js';
+import { RemoteLessonService } from './services/remoteLessonService.js';
+import type { ToolContext } from './mcp/tools.js';
+
+export class BirdieNotConfiguredError extends Error {
+  constructor() {
+    super("Birdie isn't set up yet. Run Birdie's setup-birdie prompt (or call complete_setup) first.");
+    this.name = 'BirdieNotConfiguredError';
+  }
+}
+
+// The MCP-only context builder (design spec §4.3): unlike buildContext() (REST/web, always
+// local), this reads ~/.birdie/config.json and picks a local or remote ToolContext
+// accordingly. complete_setup and save_domain_profile (Task 13/14) don't depend on this -
+// they work whether or not Birdie is configured yet, since that's how setup gets done.
+export function buildMcpContext(): ToolContext {
+  const config = readConfig();
+  if (!config) throw new BirdieNotConfiguredError();
+  if (config.mode === 'remote') {
+    return {
+      traceService: new RemoteTraceService(config.server_url!),
+      lessonService: new RemoteLessonService(config.server_url!),
+    };
+  }
+  return toToolContext(buildContext());
+}
+```
+
+- [ ] **Step 17: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- mcpContext`
+Expected: PASS (3 tests passed).
+
+- [ ] **Step 18: Modify `backend/src/cli.ts`**
+
+```typescript
+#!/usr/bin/env node
+import 'dotenv/config';
+import { buildContext } from './context.js';
+import { createServer } from './server.js';
+import { createMcpServer } from './mcp/server.js';
+import { buildMcpContext } from './mcpContext.js';
+import { loadDomainProfile, resolveDomainProfilePath } from './domain.js';
+
+async function main(): Promise<void> {
+  const mode = process.argv[2] ?? 'both';
+
+  if (mode === 'web' || mode === 'both') {
+    const ctx = buildContext();
+    const port = Number(process.env.PORT ?? 4000);
+    createServer(ctx).listen(port, () => {
+      console.error(`Birdie REST API + web UI listening on http://localhost:${port}`);
+    });
+  }
+
+  if (mode === 'mcp' || mode === 'both') {
+    const domainProfile = loadDomainProfile(resolveDomainProfilePath());
+    const server = createMcpServer(buildMcpContext, domainProfile);
+    await server.start({ transportType: 'stdio' });
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+`buildMcpContext` is passed by reference as the `getCtx` callback — its signature (`(): ToolContext`) already matches, and passing the function itself means every tool call re-reads `~/.birdie/config.json` fresh, exactly as `registerTools` (Step 12) expects.
+
+- [ ] **Step 19: Run the full backend test suite**
+
+Run: `npm run test --workspace backend`
+Expected: PASS (all tests across all files still pass).
+
+- [ ] **Step 20: Commit**
+
+```bash
+git add backend/src/routes/traces.ts backend/src/routes/lessons.ts backend/src/services/remoteRequest.ts backend/src/services/remoteTraceService.ts backend/src/services/remoteLessonService.ts backend/src/mcpContext.ts backend/src/mcp/tools.ts backend/src/mcp/server.ts backend/src/cli.ts backend/test/routes.test.ts backend/test/remoteService.test.ts backend/test/mcpContext.test.ts
+git commit -m "Add remote-sync REST routes, RemoteTraceService/RemoteLessonService, and mcpContext for local-vs-remote MCP selection"
+```
+
+---
+
+### Task 16: `open_review_queue` MCP tool
+
+**Files:**
+- Modify: `backend/src/mcp/tools.ts` (add `open_review_queue`)
+- Test: Create `backend/test/openReviewQueue.test.ts`
+
+**Interfaces:**
+- Produces (added to `mcp/tools.ts`): `async openReviewQueueHandler(): Promise<{ url: string }>`, registered as the `open_review_queue` MCP tool.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/test/openReviewQueue.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeConfig } from '../src/config.js';
+import { openReviewQueueHandler } from '../src/mcp/tools.js';
+
+describe('openReviewQueueHandler', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'birdie-openqueue-'));
+    process.env.BIRDIE_CONFIG_PATH = join(dir, 'config.json');
+  });
+
+  afterEach(() => {
+    delete process.env.BIRDIE_CONFIG_PATH;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throws when Birdie is not set up yet', async () => {
+    await expect(openReviewQueueHandler()).rejects.toThrow(/not set up/);
+  });
+
+  it('returns the shared server URL directly in remote mode, without starting a local server', async () => {
+    writeConfig({ mode: 'remote', server_url: 'http://birdie.internal:4000' });
+    const result = await openReviewQueueHandler();
+    expect(result).toEqual({ url: 'http://birdie.internal:4000' });
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- openReviewQueue`
+Expected: FAIL — `openReviewQueueHandler is not a function`.
+
+- [ ] **Step 3: Modify `backend/src/mcp/tools.ts`**
+
+Add these imports near the top:
+
+```typescript
+import { buildContext } from '../context.js';
+import { createServer } from '../server.js';
+```
+
+Add this after `saveDomainProfileHandler`:
+
+```typescript
+let localWebServerUrl: string | undefined;
+
+export async function openReviewQueueHandler(): Promise<{ url: string }> {
+  const config = readConfig();
+  if (!config) throw new Error("Birdie isn't set up yet. Call complete_setup first.");
+  if (config.mode === 'remote') {
+    return { url: config.server_url! };
+  }
+  if (!localWebServerUrl) {
+    const port = Number(process.env.PORT ?? 4000);
+    const ctx = buildContext();
+    await new Promise<void>((resolve) => {
+      createServer(ctx).listen(port, resolve);
+    });
+    localWebServerUrl = `http://localhost:${port}`;
+  }
+  return { url: localWebServerUrl };
+}
+```
+
+Add this registration inside `registerTools`, after `save_domain_profile`:
+
+```typescript
+  server.addTool({
+    name: 'open_review_queue',
+    description: 'Start (if needed) and return the URL of the review queue web page.',
+    parameters: z.object({}),
+    execute: async () => JSON.stringify(await openReviewQueueHandler()),
+  });
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- openReviewQueue`
+Expected: PASS (2 tests passed). The local-mode branch (actually starting the web server) is intentionally not covered here — it's verified manually in Step 5, the same way Task 10/11 verify real server startup by running the CLI directly rather than through vitest.
+
+- [ ] **Step 5: Manual smoke check for local mode**
+
+Run: `cd backend && BIRDIE_CONFIG_PATH=/tmp/birdie-smoke-config.json DB_PATH=/tmp/birdie-smoke.db npx tsx src/cli.ts mcp`, then from an MCP-capable client (or a short throwaway script calling the server's stdio transport) call `complete_setup` with `{ "mode": "local" }` followed by `open_review_queue`. Expected: the tool returns `{ "url": "http://localhost:4000" }` and that URL serves the review queue page in a browser (empty, since nothing's been captured yet — that's expected).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/mcp/tools.ts backend/test/openReviewQueue.test.ts
+git commit -m "Add open_review_queue MCP tool"
+```
+
+---
+
+### Task 17: Plain-language copy layer
+
+**Files:**
+- Create: `backend/src/copy.ts`
+- Create: `web/src/copy.ts` (kept identical to `backend/src/copy.ts` by hand — `backend` and `web` are separate npm workspaces with no shared package between them yet, so this is intentionally duplicated rather than cross-imported; a future pass could extract a small `@birdie/copy` workspace package if the duplication becomes a real maintenance problem)
+- Modify: `backend/src/mcp/tools.ts` (use `copy.trace` in the `capture_trace` description)
+- Modify: `web/src/ReviewList.tsx` (use plain-language labels instead of raw field names)
+- Test: Create `backend/test/copy.test.ts`
+
+**Interfaces:**
+- Produces: `export const copy = { trace, typology, quoteNotVerified, playbookDiverges, playbookAligns, promoteAction, statusPendingReview, domainProfileLabel }`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/test/copy.test.ts`:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { copy } from '../src/copy.js';
+
+describe('copy', () => {
+  it('phrases quote verification failure in plain language, not the raw field name', () => {
+    expect(copy.quoteNotVerified.toLowerCase()).not.toContain('quote_verified');
+    expect(copy.quoteNotVerified).toContain("couldn't find");
+  });
+
+  it('phrases a playbook divergence in plain language', () => {
+    expect(copy.playbookDiverges).toBe('This edit differs from your playbook.');
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- copy`
+Expected: FAIL — `Cannot find module '../src/copy.js'`.
+
+- [ ] **Step 3: Create `backend/src/copy.ts`**
+
+```typescript
+export const copy = {
+  trace: 'example',
+  typology: 'category',
+  quoteNotVerified: "We couldn't find this exact wording in the original text — please check it.",
+  playbookDiverges: 'This edit differs from your playbook.',
+  playbookAligns: 'Follows your playbook.',
+  promoteAction: 'Add to shared library',
+  statusPendingReview: 'Waiting for review',
+  domainProfileLabel: "your team's settings",
+} as const;
+```
+
+- [ ] **Step 4: Copy the same content to `web/src/copy.ts`**
+
+Create `web/src/copy.ts` with identical content to `backend/src/copy.ts` above.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- copy`
+Expected: PASS (2 tests passed).
+
+- [ ] **Step 6: Modify `backend/src/mcp/tools.ts`**
+
+Add this import near the top:
+
+```typescript
+import { copy } from '../copy.js';
+```
+
+Change the `capture_trace` tool's description:
+
+```typescript
+    description: `Capture a before/after edit as an ${copy.trace} for later extraction into a mentorship lesson.`,
+```
+
+- [ ] **Step 7: Modify `web/src/ReviewList.tsx`**
+
+Add this import near the top:
+
+```typescript
+import { copy } from './copy.js';
+```
+
+Replace the quote-verification and playbook-divergence banners:
+
+```typescript
+          {!lesson.quote_verified && <p style={{ color: 'darkred' }}>{copy.quoteNotVerified}</p>}
+          {lesson.playbook_alignment === 'diverges' && (
+            <p style={{ color: 'darkorange' }}>
+              {copy.playbookDiverges} {lesson.playbook_note}
+            </p>
+          )}
+```
+
+Replace the promote button's label:
+
+```typescript
+          <button onClick={() => handlePromote(lesson)}>{copy.promoteAction}</button>
+```
+
+- [ ] **Step 8: Run the full backend test suite and rebuild the web workspace**
+
+Run: `npm run test --workspace backend && npm run build --workspace web`
+Expected: PASS / build succeeds with no type errors.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add backend/src/copy.ts web/src/copy.ts backend/src/mcp/tools.ts web/src/ReviewList.tsx backend/test/copy.test.ts
+git commit -m "Add plain-language copy layer for tool descriptions and the web UI"
+```
+
+---
+
+### Task 18: `setup-birdie` MCP prompt
+
+**Files:**
+- Modify: `backend/src/mcp/prompts.ts` (add `buildSetupBirdiePrompt`, register the `setup-birdie` prompt)
+- Test: Modify `backend/test/prompts.test.ts`
+
+**Interfaces:**
+- Produces (added to `prompts.ts`): `buildSetupBirdiePrompt(): string`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `backend/test/prompts.test.ts`:
+
+```typescript
+import { buildSetupBirdiePrompt } from '../src/mcp/prompts.js';
+
+it('setup-birdie prompt walks through the local/remote choice and the optional domain interview', () => {
+  const prompt = buildSetupBirdiePrompt();
+  expect(prompt).toContain('complete_setup');
+  expect(prompt).toContain('save_domain_profile');
+  expect(prompt).toContain('mode: "remote"');
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm run test --workspace backend -- prompts`
+Expected: FAIL — `buildSetupBirdiePrompt is not a function`.
+
+- [ ] **Step 3: Modify `backend/src/mcp/prompts.ts`**
+
+Add this function (position doesn't matter relative to the other builders, but keep it above `registerPrompts`):
+
+```typescript
+export function buildSetupBirdiePrompt(): string {
+  return `You are running Birdie's first-time setup for this user - do this before attempting any other Birdie action in a new conversation.
+
+1. Ask: "Do you already have a Birdie server URL from your team? If so, share it - otherwise I'll set one up on this device."
+2. If they give a URL, call complete_setup with { mode: "remote", server_url: "<their URL>" }.
+   If they don't have one (or want to skip), call complete_setup with { mode: "local" }.
+3. Then offer, but don't force: "Want to tell me a bit about your field so I can tailor the categories Birdie looks for? Or I can just use the default legal example for now." If they engage, ask what field they're in and what kinds of edits matter most to catch vs. what's just noise, write the answer as:
+
+# Domain
+<one paragraph>
+
+# Typology
+- category_name: one-line definition
+...
+
+# What counts as mentorship-worthy
+<guidance>
+
+and call save_domain_profile with that content. If they'd rather skip it, don't call save_domain_profile - the shipped legal default stays active.
+4. Once setup is complete, continue with whatever the user originally asked for.`;
+}
+```
+
+Add this registration inside `registerPrompts`, alongside the other `server.addPrompt` calls:
+
+```typescript
+  server.addPrompt({
+    name: 'setup-birdie',
+    description: "Run Birdie's first-time setup conversation: connect to a server (local or remote) and optionally customize the domain profile.",
+    arguments: [],
+    load: async () => buildSetupBirdiePrompt(),
+  });
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npm run test --workspace backend -- prompts`
+Expected: PASS (4 tests passed).
+
+- [ ] **Step 5: Run the full backend test suite**
+
+Run: `npm run test --workspace backend`
+Expected: PASS (all tests across all files still pass).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/mcp/prompts.ts backend/test/prompts.test.ts
+git commit -m "Add setup-birdie MCP prompt for the first-run conversation"
+```
+
+---
+
+### Task 19: Claude Code plugin manifest
+
+**Files:**
+- Create: `.claude-plugin/plugin.json`
+
+**Interfaces:**
+- None — this is a static manifest, not code other tasks import from.
+
+- [ ] **Step 1: Create `.claude-plugin/plugin.json`**
+
+```json
+{
+  "name": "birdie",
+  "version": "0.1.0",
+  "description": "Capture mentorship moments (a senior's redline of a junior's draft), extract a reviewed lesson from them, and let juniors ask how a senior handled something or seniors ask what a junior is struggling with.",
+  "mcpServers": {
+    "birdie": {
+      "command": "npx",
+      "args": ["tsx", "backend/src/cli.ts", "mcp"]
+    }
+  },
+  "skills": ["skills/birdie-mentor"]
+}
+```
+
+- [ ] **Step 2: Verify the manifest shape against a known-working plugin**
+
+The exact key names Claude Code expects in a plugin manifest (`mcpServers`, `skills`, or otherwise) can change between Claude Code versions. Before trusting the content above, compare it against an already-installed plugin's manifest that also bundles an MCP server — for example, run:
+
+```bash
+find ~/.claude/plugins -name plugin.json -exec grep -l mcpServers {} \;
+```
+
+and open one of the results to confirm the current schema (key names, whether `args` supports relative paths like `backend/src/cli.ts`, how `cwd`/working directory is resolved for the bundled command). Adjust `.claude-plugin/plugin.json` above to match if the schema has changed since this plan was written.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add .claude-plugin/plugin.json
+git commit -m "Add Claude Code plugin manifest bundling the MCP server and Skill"
+```
+
+---
+
+### Task 20: Claude Code Skill wrapper (bundled, first-run trigger)
 
 **Files:**
 - Create: `skills/birdie-mentor/SKILL.md`
+
+**Interfaces:**
+- Consumes: `setup-birdie`, `extract-lesson`, `ask-senior-approach`, `ask-junior-struggles` prompts (Task 8, Task 18); all MCP tools from Tasks 6/7/13/14/16.
 
 - [ ] **Step 1: Create `skills/birdie-mentor/SKILL.md`**
 
 ```markdown
 ---
 name: birdie-mentor
-description: Capture a before/after edit as a mentorship trace, extract a lesson from it, review, promote, or ask what a senior/junior has done - use when the user wants to log a redline/edit for mentorship, review pending lessons, or ask about past senior approaches or junior struggles captured in Birdie.
+description: Capture a before/after edit as a mentorship example, extract a lesson from it, review, promote, or ask what a senior/junior has done - use when the user wants to log a redline/edit for mentorship, review pending lessons, or ask about past senior approaches or junior struggles captured in Birdie.
 ---
 
 # Birdie Mentor
 
-Birdie is an MCP server (registered separately - see the project README) for capturing mentorship moments: a senior's edit to a junior's draft, turned into a reviewed, reusable lesson.
+Birdie captures mentorship moments: a senior's edit to a junior's draft, turned into a reviewed, reusable lesson. This Skill ships bundled with the Birdie plugin (`.claude-plugin/plugin.json`, Task 19) - installing the plugin is the only setup step; you don't need to separately register an MCP server.
 
-Use the `birdie` MCP tools and prompts directly - this skill just orients you on the workflow, it adds no logic beyond what the MCP prompts already specify.
+The people you're helping are not developers. Talk about "examples" and "lessons" and "categories," not "traces" and "typology" - see `backend/src/copy.ts` (Task 17) for the exact phrasing to reuse.
+
+## First run: check whether Birdie is set up
+
+Before doing anything else in a new conversation, try the action the user asked for. If any tool call fails with a message like "Birdie isn't set up yet," run the `setup-birdie` MCP prompt - it walks through connecting to a local or team server, and optionally interviews the user about their field to customize the categories Birdie looks for. Once setup succeeds, retry the original request.
 
 ## Capturing and extracting a lesson
 
 1. If the user describes a before/after edit that hasn't been captured yet, call `capture_trace` with the before/after text, who submitted it, their role, and (if known) the junior/senior names involved.
-2. To turn a captured trace into a lesson, use the `extract-lesson` MCP prompt (or manually: call `get_trace`, decide if it's mentorship-worthy per the loaded domain profile, then call `save_extraction` or `skip_extraction`).
+2. To turn a captured example into a lesson, use the `extract-lesson` MCP prompt (or manually: call `get_trace`, decide if it's mentorship-worthy per the loaded domain profile, then call `save_extraction` or `skip_extraction`).
 
 ## Reviewing and promoting
 
-Call `list_lessons` with `status=pending_review` to see what's waiting. Use `review_lesson` to edit or reject, and `promote_lesson` (with a reviewer name) to publish a lesson into the shared pool. Promotion always requires a human reviewer - never promote a lesson the user hasn't actually looked at.
+Call `list_lessons` with `status=pending_review` to see what's waiting. Use `review_lesson` to edit or reject, and `promote_lesson` (with a reviewer name) to add a lesson to the shared library. Promotion always requires a human reviewer - never promote a lesson the user hasn't actually looked at. If the user would rather click through a queue than review in chat, call `open_review_queue` and share the URL it returns.
 
 ## Asking the two audiences
 
 - A junior asking how a senior handled something: use the `ask-senior-approach` MCP prompt (or call `ask_senior_approach` directly).
 - A senior asking what a junior is struggling with: use the `ask-junior-struggles` MCP prompt (or call `ask_junior_struggles` directly).
 
-Both only search **promoted** lessons - if nothing comes back, say so; don't invent an answer.
+Both only search the shared library (promoted lessons) - if nothing comes back, say so; don't invent an answer.
 
-## Adapting to a different domain
+## Adapting to a different field
 
-Birdie's typology and "what's mentorship-worthy" criteria come from `domain.md` at the project root, not from this skill. If the user is in a different field (audit, tax, software, etc.), point them at editing that file rather than trying to override the taxonomy here.
+Birdie's categories and "what's mentorship-worthy" criteria come from the domain profile, set up through the `setup-birdie` interview (Task 18) rather than a file you or the user hand-edit. If the user wants to change it later, just ask them what should be different and call `save_domain_profile` with the updated content - there's no code change involved.
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add skills/birdie-mentor/SKILL.md
-git commit -m "Add thin Claude Code Skill wrapper over the Birdie MCP tools/prompts"
+git commit -m "Update Birdie Skill for bundled plugin distribution and first-run setup"
 ```
 
 ---
 
-### Task 13: README
+### Task 21: README
 
 **Files:**
 - Create: `README.md`
@@ -2547,31 +4239,31 @@ git commit -m "Add thin Claude Code Skill wrapper over the Birdie MCP tools/prom
 ```markdown
 # Birdie
 
-A minimalistic mentorship-capture plugin. Capture a before/after edit (a senior's redline of a junior's draft), let your connected AI assistant extract a candidate lesson from it, review it, and promote it into a pool two audiences can query: juniors asking how a senior handled something, and seniors asking what a junior is struggling with.
+Capture a before/after edit (a senior's redline of a junior's draft), let your connected AI assistant extract a candidate lesson from it, review it, and add it to a shared library two audiences can query: juniors asking how a senior handled something, and seniors asking what a junior is struggling with.
 
-Birdie is an MCP server with no LLM of its own - the model reasoning over your traces is whichever one is running your connected MCP host (Claude Code, Claude Desktop, Codex CLI, or any other MCP-compatible client). See `docs/superpowers/specs/2026-07-08-birdie-mentorship-plugin-design.md` for the full design.
+Birdie is an MCP server with no LLM of its own - the model reasoning over what you capture is whichever one is running your connected AI assistant. See `docs/superpowers/specs/2026-07-08-birdie-mentorship-plugin-design.md` for the full design.
 
-## Setup
+## Install (Claude Code)
+
+This is the intended way to run Birdie - no terminal commands beyond the install itself:
+
+1. In Claude Code, run `/plugin install birdie` (or install it from wherever this plugin is listed in your marketplace).
+2. Start a conversation and ask Birdie to do something - e.g. "capture this edit for mentorship." The first time, it'll ask whether you already have a team Birdie server URL or want to set one up on this device, and optionally interview you about your field to customize the categories it looks for. Answer in plain language; there's nothing to configure by hand.
+3. That's it. Capture, review, and ask all happen by chatting - see `skills/birdie-mentor/SKILL.md` for the full workflow. If you'd rather click through a queue than review in chat, ask your assistant to "open the review queue."
+
+## Advanced: manual MCP registration (Claude Desktop, Codex CLI, local development)
+
+If you're not on Claude Code, or you're developing Birdie itself, you can run and register the server by hand:
 
 \`\`\`bash
 npm install
-cp backend/.env.example backend/.env
-\`\`\`
-
-Edit `domain.md` at the repo root to match your field - it ships with a legal example, but the typology and "what's mentorship-worthy" criteria are meant to be replaced for audit, tax, software review, or anything else.
-
-## Running
-
-\`\`\`bash
 npm run dev:backend -- mcp   # MCP server only (stdio)
 npm run dev:backend -- web   # REST API + web UI on http://localhost:4000
 npm run dev:backend          # both
 npm run dev:web              # Vite dev server for the web UI (proxies API calls to :4000)
 \`\`\`
 
-## Registering as an MCP server
-
-Point your MCP host's config at the backend's `mcp` mode, e.g. in Claude Code / Claude Desktop:
+Point your MCP host's config at the `mcp` mode:
 
 \`\`\`json
 {
@@ -2585,6 +4277,10 @@ Point your MCP host's config at the backend's `mcp` mode, e.g. in Claude Code / 
 }
 \`\`\`
 
+The same first-run setup conversation (local vs. a team server, and the optional domain-profile interview) applies regardless of how the server was registered - it's driven by the `setup-birdie` MCP prompt and the `complete_setup` / `save_domain_profile` tools, not by anything in this config.
+
+Local storage and the customized domain profile live under `~/.birdie/` (`config.json`, `birdie.db`, and `domain.md` if you've customized it) rather than anywhere in this repo. `backend/.env.example` documents advanced/dev-only overrides (`DB_PATH`, `DOMAIN_PROFILE_PATH`, `BIRDIE_CONFIG_PATH`, `PORT`) for local development - normal use never needs them.
+
 ## Testing
 
 \`\`\`bash
@@ -2596,13 +4292,14 @@ npm run test --workspace backend
 
 ```bash
 git add README.md
-git commit -m "Add project README"
+git commit -m "Add project README with plugin install as the primary path"
 ```
 
 ---
 
 ## Self-Review Notes
 
-- **Spec coverage:** every numbered section of the design spec (§1–§13) maps to a task: data model → Task 1/2, quote verification → Task 3, domain profile → Task 4, core services → Task 5, MCP tools → Task 6/7, MCP prompts → Task 8, REST → Task 9, run modes/CLI → Task 10, one-page web UI → Task 11, Skill wrapper → Task 12, README → Task 13.
-- **Naming consistency:** all wire-facing fields (types.ts, repositories, services' public method signatures for domain data, zod schemas, REST bodies, web `api.ts`) use snake_case matching the spec's §5/§8 field names exactly; only class names, method names, and non-domain local variables use camelCase. Verified `Lesson`/`Trace`/`NewExtraction`/`LessonEdit`/`PromotePayload`/`LessonFilters` field names are identical across Task 1 (definition), Task 2 (repositories), Task 5 (services), Task 6/7 (MCP tools), and Task 9 (REST routes).
-- **No placeholders:** every step has complete, runnable code — no TODOs or "add validation here" stubs.
+- **Spec coverage:** every numbered section of the design spec (§1–§13) maps to a task: data model → Task 1/2, quote verification → Task 3, domain profile loading → Task 4, core services → Task 5, MCP tools → Task 6/7, MCP prompts → Task 8, REST → Task 9, run modes/CLI → Task 10, one-page web UI → Task 11, first-run config → Task 12/13, guided domain-profile setup → Task 14, remote-server support → Task 15, on-demand web UI → Task 16, plain-language copy → Task 17, setup-birdie prompt → Task 18, plugin manifest → Task 19, Skill wrapper → Task 20, README → Task 21.
+- **Naming consistency:** all wire-facing fields (types.ts, repositories, services' public method signatures for domain data, zod schemas, REST bodies, web `api.ts`) use snake_case matching the spec's §5/§8 field names exactly; only class names, method names, and non-domain local variables use camelCase. Verified `Lesson`/`Trace`/`NewExtraction`/`LessonEdit`/`PromotePayload`/`LessonFilters` field names are identical across Task 1 (definition), Task 2 (repositories), Task 5 (services), Task 6/7 (MCP tools), and Task 9 (REST routes). `TraceServiceLike`/`LessonServiceLike` (Task 1) method names match `TraceService`/`LessonService` (Task 5) exactly, and `RemoteTraceService`/`RemoteLessonService` (Task 15) match both.
+- **Async boundary:** `TraceService`/`LessonService` (Task 5) and the SQLite repositories underneath stay synchronous throughout - only the MCP tool layer (`ToolContext`, Task 6 onward) is async, via `toToolContext`'s adapter (Task 6) for the local case and `RemoteTraceService`/`RemoteLessonService`'s real HTTP calls (Task 15) for the remote case. The REST API and web UI (Task 9/11) never touch `ToolContext` and stay fully synchronous underneath, per design spec §4.3.
+- **No placeholders:** every step has complete, runnable code — no TODOs or "add validation here" stubs, except Task 19 Step 2, which is a documented external-verification step (the Claude Code plugin manifest schema is versioned outside this repo) rather than a code placeholder.
