@@ -1,12 +1,39 @@
-import { Database } from 'bun:sqlite';
+import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export function openDb(dbPath: string): Database {
+export interface SqliteStatement {
+  run(...params: unknown[]): unknown;
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+}
+
+export interface SqliteDb {
+  prepare(sql: string): SqliteStatement;
+  exec(sql: string): void;
+  close(): void;
+}
+
+const require = createRequire(import.meta.url);
+
+// Bun ships its own faster `bun:sqlite`; the plugin binary run by end users
+// is plain Node, which only has `node:sqlite`. Pick whichever the current
+// runtime provides rather than forcing Node's driver on Bun (unsupported)
+// or vice versa.
+function openDriver(dbPath: string): SqliteDb {
+  if (typeof Bun !== 'undefined') {
+    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
+    return new Database(dbPath) as unknown as SqliteDb;
+  }
+  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+  return new DatabaseSync(dbPath) as unknown as SqliteDb;
+}
+
+export function openDb(dbPath: string): SqliteDb {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
   }
-  const db = new Database(dbPath);
+  const db = openDriver(dbPath);
   if (dbPath !== ':memory:') {
     db.exec('PRAGMA journal_mode = WAL;');
   }
@@ -14,7 +41,7 @@ export function openDb(dbPath: string): Database {
   return db;
 }
 
-function migrate(db: Database): void {
+function migrate(db: SqliteDb): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,

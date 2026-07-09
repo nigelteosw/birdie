@@ -20,7 +20,7 @@
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/express": "^4.17.21",
-    "@types/node": "^20.14.0",
+    "@types/node": "^22.10.0",
     "typescript": "^5.5.4"
   }
 }

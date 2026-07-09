@@ -8,9 +8,12 @@
     "test": "bun run --cwd backend test",
     "dev:backend": "bun run --cwd backend dev",
     "dev:web": "bun run --cwd web dev",
-    "build:plugin-binaries": "bash scripts/build-plugin-binaries.sh"
+    "build:plugin-bundle": "bash scripts/build-plugin-bundle.sh"
   },
   "patchedDependencies": {
     "fastmcp@1.27.7": "patches/fastmcp@1.27.7.patch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
   }
 }

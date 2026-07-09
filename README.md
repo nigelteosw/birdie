@@ -68,13 +68,13 @@ bun run dev:backend -- web   # REST API + web UI only
 bun run dev:backend -- mcp   # MCP server only
 ```
 
-### Releasing plugin binaries
+### Releasing the plugin bundle
 
-The plugin (`.claude-plugin/plugin.json`) launches a precompiled MCP server binary via `bin/launch.js`, not `backend/src/cli.ts` directly. After a backend change that should ship to plugin users, rebuild and commit the compressed binaries:
+The plugin (`.claude-plugin/plugin.json`) launches a bundled MCP server via `bin/birdie.mjs`, not `backend/src/cli.ts` directly. After a backend change that should ship to plugin users, rebuild and commit the bundle:
 
 ```bash
-bun run build:plugin-binaries
-git add bin/*.gz
+bun run build:plugin-bundle
+git add bin/birdie.mjs
 ```
 
 ## REST API

@@ -1,9 +1,9 @@
-import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
+import type { SqliteDb } from '../db.js';
 import type { NewTrace, Trace, TraceStatus } from '../types.js';
 
 export class TraceRepository {
-  constructor(private db: Database) {}
+  constructor(private db: SqliteDb) {}
 
   create(input: NewTrace): Trace {
     const id = randomUUID();

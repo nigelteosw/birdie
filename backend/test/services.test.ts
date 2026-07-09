@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { Database } from 'bun:sqlite';
 import { openDb } from '../src/db.js';
+import type { SqliteDb } from '../src/db.js';
 import { loadDomainProfile } from '../src/domain.js';
 import { LessonRepository } from '../src/repositories/lessonRepository.js';
 import { TraceRepository } from '../src/repositories/traceRepository.js';
@@ -8,7 +8,7 @@ import { LessonService } from '../src/services/lessonService.js';
 import { TraceService } from '../src/services/traceService.js';
 
 describe('services', () => {
-  let db: Database;
+  let db: SqliteDb;
   let traceService: TraceService;
   let lessonService: LessonService;
 

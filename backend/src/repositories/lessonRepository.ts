@@ -1,5 +1,5 @@
-import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
+import type { SqliteDb } from '../db.js';
 import type {
   JuniorStrugglesResult,
   LessonEdit,
@@ -18,7 +18,7 @@ function rowToLesson(row: LessonRow): LessonWithTrace {
 }
 
 export class LessonRepository {
-  constructor(private db: Database) {}
+  constructor(private db: SqliteDb) {}
 
   create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace {
     const id = randomUUID();
