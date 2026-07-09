@@ -11,6 +11,12 @@ export function registerPrompts(server: FastMCP, ctxFactory: () => McpContext = 
     load: async () => buildSetupPrompt(ctxFactory().domainProfile),
   });
   mcp.addPrompt({
+    name: 'configure-birdie',
+    description: 'Inspect or change Birdie settings, including local vs shared server mode and category/domain profile.',
+    arguments: [],
+    load: async () => buildConfigurePrompt(),
+  });
+  mcp.addPrompt({
     name: 'extract-lesson',
     description: 'Extract a mentorship lesson from a captured example.',
     arguments: [{ name: 'trace_id', description: 'The example to extract from', required: true }],
@@ -55,6 +61,19 @@ Guidance.
 
 Current default:
 ${profile.raw}`;
+}
+
+export function buildConfigurePrompt(): string {
+  return `Help the user inspect or change Birdie settings.
+
+Steps:
+1. Call get_birdie_settings and summarize the current mode, shared server URL if present, review queue URL, and config/domain file paths.
+2. Ask what they want to change only if their request is ambiguous.
+3. To switch to local storage, call update_birdie_settings with mode="local".
+4. To connect to a shared local or remote backend, call update_birdie_settings with mode="remote" and server_url set to the provided URL.
+5. To review categories, call get_domain_profile.
+6. To change categories, ask for the domain and what edits matter, then write a markdown profile with # Domain, # Typology, and # What counts as mentorship-worthy, and call save_domain_profile.
+7. If something looks broken, call birdie_doctor and explain the failing check in plain language.`;
 }
 
 export function buildExtractLessonPrompt(profile: DomainProfile, traceId: string): string {

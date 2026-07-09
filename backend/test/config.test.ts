@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { readConfigState, saveDomainProfile, writeConfig } from '../src/config.js';
+import { readConfigState, readDomainProfileFile, readSettingsSummary, saveDomainProfile, writeConfig } from '../src/config.js';
 
 describe('config', () => {
   let oldConfigPath: string | undefined;
@@ -33,6 +33,17 @@ describe('config', () => {
   it('writes local config', () => {
     writeConfig({ mode: 'local' });
     expect(readConfigState().config).toEqual({ mode: 'local' });
+    expect(readSettingsSummary()).toMatchObject({ configured: true, mode: 'local' });
+  });
+
+  it('summarizes remote config', () => {
+    writeConfig({ mode: 'remote', server_url: 'https://birdie.example.com/' });
+    expect(readSettingsSummary()).toMatchObject({
+      configured: true,
+      mode: 'remote',
+      server_url: 'https://birdie.example.com',
+      reviewQueueUrl: 'https://birdie.example.com',
+    });
   });
 
   it('falls back to first run for corrupt config', () => {
@@ -43,5 +54,6 @@ describe('config', () => {
   it('saves a domain profile', () => {
     const result = saveDomainProfile('# Domain\nTest');
     expect(readFileSync(result.path, 'utf-8')).toContain('# Domain');
+    expect(readDomainProfileFile()).toMatchObject({ customized: true, path: result.path });
   });
 });

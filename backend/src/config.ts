@@ -12,6 +12,17 @@ export interface ConfigState {
   config?: BirdieConfig;
 }
 
+export interface SettingsSummary {
+  configured: boolean;
+  mode: 'local' | 'remote' | 'unconfigured';
+  server_url?: string;
+  configPath: string;
+  birdieDir: string;
+  dbPath: string;
+  domainPath: string;
+  reviewQueueUrl: string;
+}
+
 export const DEFAULT_PORT = 6677;
 
 export function birdieDir(): string {
@@ -57,6 +68,21 @@ export function readConfigState(): ConfigState {
   return state;
 }
 
+export function readSettingsSummary(): SettingsSummary {
+  const state = readConfigState();
+  const mode = state.config?.mode ?? 'unconfigured';
+  return {
+    configured: !state.firstRun && Boolean(state.config),
+    mode,
+    server_url: state.config?.mode === 'remote' ? state.config.server_url : undefined,
+    configPath: state.configPath,
+    birdieDir: state.birdieDir,
+    dbPath: state.dbPath,
+    domainPath: state.domainPath,
+    reviewQueueUrl: state.config?.mode === 'remote' ? state.config.server_url : `http://127.0.0.1:${localWebPort()}`,
+  };
+}
+
 export function writeConfig(config: BirdieConfig): BirdieConfig {
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });
@@ -76,6 +102,15 @@ export function saveDomainProfile(content: string): { path: string } {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content.endsWith('\n') ? content : `${content}\n`);
   return { path };
+}
+
+export function readDomainProfileFile(): { path: string; content: string; customized: boolean } {
+  const path = domainProfilePath();
+  try {
+    return { path, content: readFileSync(path, 'utf-8'), customized: true };
+  } catch {
+    return { path, content: '', customized: false };
+  }
 }
 
 function expandHome(path: string): string {

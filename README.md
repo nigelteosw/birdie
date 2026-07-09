@@ -54,12 +54,45 @@ By default it binds to a fixed port, `http://127.0.0.1:6677`, so you always know
 
 Ask Birdie to switch at any point — e.g. "switch me to the team server at https://birdie.example.com" or "go back to local mode." That re-runs `complete_setup` with the new mode, which overwrites `~/.birdie/config.json`; since every tool call re-reads that config, the switch takes effect immediately on the next request, no restart needed. Switching doesn't migrate data: your local `~/.birdie/birdie.db` is left untouched (nothing is pushed to the shared server, nothing is deleted), so switching back to local later picks up right where that local db left off, and switching to remote just points new activity at the shared server instead.
 
+You can also use the `configure-birdie` MCP prompt, or ask Birdie to show settings, run diagnostics, switch mode, or update categories. The plugin exposes `get_birdie_settings`, `update_birdie_settings`, `get_domain_profile`, `save_domain_profile`, and `birdie_doctor` for assistants that prefer direct tool calls.
+
+### Sharing one local backend across assistants
+
+Claude, ChatGPT, Codex, and other MCP clients cannot share a single stdio MCP process. They can share one Birdie backend if each client points its own Birdie MCP process at the same server URL.
+
+Start the backend:
+
+```bash
+bun run dev:backend -- web
+```
+
+Then configure each client with remote/shared-server mode:
+
+```text
+http://127.0.0.1:6677
+```
+
+Use a LAN or tunnel URL instead of `127.0.0.1` if the client runs on a different machine.
+
 ## Development Notes
 
 - Local config: `~/.birdie/config.json`
 - Local database: `~/.birdie/birdie.db`
 - Local domain profile: `~/.birdie/domain.md`, falling back to `domain.md`
 - Dev overrides: `BIRDIE_CONFIG_PATH`, `DB_PATH`, `DOMAIN_PROFILE_PATH`, `PORT`
+
+### CLI settings
+
+```bash
+birdie status
+birdie doctor
+birdie setup local
+birdie setup remote http://127.0.0.1:6677
+birdie config show
+birdie config path
+birdie domain show
+birdie domain set ./my-domain-profile.md
+```
 
 ## GitHub Pages Docs
 

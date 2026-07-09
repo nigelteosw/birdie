@@ -1,0 +1,68 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Database } from 'bun:sqlite';
+import { describe, expect, it } from 'bun:test';
+import { openDb } from '../src/db.js';
+
+describe('db migration', () => {
+  it('drops legacy role columns from an existing traces table', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'birdie-db-migration-'));
+    const dbPath = join(dir, 'birdie.db');
+
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE traces (
+        id TEXT PRIMARY KEY,
+        submitted_by TEXT NOT NULL,
+        submitted_by_role TEXT NOT NULL,
+        junior_name TEXT,
+        senior_name TEXT,
+        before_text TEXT NOT NULL,
+        after_text TEXT NOT NULL,
+        playbook_ref TEXT,
+        playbook_text TEXT,
+        context_note TEXT,
+        source TEXT NOT NULL DEFAULT 'manual',
+        status TEXT NOT NULL DEFAULT 'captured',
+        skip_reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+    `);
+    legacy
+      .prepare(
+        `INSERT INTO traces (id, submitted_by, submitted_by_role, junior_name, senior_name, before_text, after_text)
+         VALUES ('trace-1', 'Jane', 'junior', 'Jane', 'Sarah', 'before', 'after')`
+      )
+      .run();
+    legacy.close();
+
+    const db = openDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(traces)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+    expect(columns).not.toContain('submitted_by_role');
+    expect(columns).not.toContain('junior_name');
+    expect(columns).not.toContain('senior_name');
+
+    db.prepare(
+      `INSERT INTO traces (id, submitted_by, before_text, after_text) VALUES ('trace-2', 'Jane', 'before2', 'after2')`
+    ).run();
+    const row = db.prepare('SELECT * FROM traces WHERE id = ?').get('trace-2') as { submitted_by: string };
+    expect(row.submitted_by).toBe('Jane');
+
+    db.close();
+  });
+
+  it('creates a fresh traces table with no legacy role columns', () => {
+    const db = openDb(':memory:');
+    const columns = (db.prepare('PRAGMA table_info(traces)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+    expect(columns).not.toContain('submitted_by_role');
+    expect(columns).not.toContain('junior_name');
+    expect(columns).not.toContain('senior_name');
+    expect(columns).toContain('submitted_by');
+    db.close();
+  });
+});

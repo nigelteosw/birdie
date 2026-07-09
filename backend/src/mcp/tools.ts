@@ -3,6 +3,9 @@ import type { FastMCP } from 'fastmcp';
 import { buildMcpContext, type McpContext } from '../mcpContext.js';
 import type { BirdieConfig } from '../types.js';
 import { copy } from '../copy.js';
+import { loadDomainProfile } from '../domain.js';
+import { openDb } from '../db.js';
+import { domainProfilePath, readDomainProfileFile, readSettingsSummary, writeConfig } from '../config.js';
 
 export type McpContextFactory = () => McpContext;
 
@@ -26,6 +29,27 @@ const setupParams = z
 
 const domainProfileParams = z.object({ content: z.string().min(1) });
 const emptyParams = z.object({});
+const updateSettingsParams = z
+  .object({
+    mode: z.enum(['local', 'remote']).optional(),
+    server_url: z.string().url().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'remote' && !data.server_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'server_url is required when mode is "remote"',
+        path: ['server_url'],
+      });
+    }
+    if (!data.mode && data.server_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'mode is required when server_url is provided',
+        path: ['mode'],
+      });
+    }
+  });
 const captureTraceParams = z.object({
   before_text: z.string().min(1),
   after_text: z.string().min(1),
@@ -82,6 +106,31 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
     description: "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server.",
     parameters: setupParams,
     execute: async (args: z.infer<typeof setupParams>) => json(completeSetupHandler(ctxFactory(), args)),
+  });
+  mcp.addTool({
+    name: 'get_birdie_settings',
+    description: 'Show whether Birdie is configured, which mode it uses, the shared server URL if any, and local file paths.',
+    parameters: emptyParams,
+    execute: async () => json(getBirdieSettingsHandler()),
+  });
+  mcp.addTool({
+    name: 'update_birdie_settings',
+    description:
+      'Switch Birdie between local storage and a shared remote server. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
+    parameters: updateSettingsParams,
+    execute: async (args: z.infer<typeof updateSettingsParams>) => json(updateBirdieSettingsHandler(args)),
+  });
+  mcp.addTool({
+    name: 'get_domain_profile',
+    description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
+    parameters: emptyParams,
+    execute: async () => json(getDomainProfileHandler()),
+  });
+  mcp.addTool({
+    name: 'birdie_doctor',
+    description: 'Run quick setup checks and explain what the user should fix next.',
+    parameters: emptyParams,
+    execute: async () => json(await birdieDoctorHandler()),
   });
   mcp.addTool({
     name: 'save_domain_profile',
@@ -171,6 +220,68 @@ export function completeSetupHandler(ctx: McpContext, args: z.infer<typeof setup
   return ctx.completeSetup(config);
 }
 
+export function getBirdieSettingsHandler() {
+  return readSettingsSummary();
+}
+
+export function updateBirdieSettingsHandler(args: z.infer<typeof updateSettingsParams>): BirdieConfig {
+  if (!args.mode) throw new Error('mode is required.');
+  const config: BirdieConfig =
+    args.mode === 'remote' ? { mode: 'remote', server_url: args.server_url! } : { mode: 'local' };
+  if (config.mode === 'local') {
+    const db = openDb(readSettingsSummary().dbPath);
+    db.close();
+  }
+  return writeConfig(config);
+}
+
+export function getDomainProfileHandler() {
+  const saved = readDomainProfileFile();
+  const loaded = loadDomainProfile(domainProfilePath());
+  return {
+    path: saved.path,
+    customized: saved.customized,
+    content: saved.customized ? saved.content : loaded.raw,
+    typology_categories: loaded.typology_categories,
+  };
+}
+
+export async function birdieDoctorHandler() {
+  const settings = readSettingsSummary();
+  const checks: Array<{ name: string; ok: boolean; detail: string }> = [
+    {
+      name: 'config',
+      ok: settings.configured,
+      detail: settings.configured
+        ? `Birdie is configured for ${settings.mode} mode.`
+        : 'Birdie is not configured. Run setup-birdie or update_birdie_settings.',
+    },
+  ];
+
+  if (settings.mode === 'local') {
+    try {
+      const db = openDb(settings.dbPath);
+      db.close();
+      checks.push({ name: 'database', ok: true, detail: settings.dbPath });
+    } catch (err) {
+      checks.push({ name: 'database', ok: false, detail: errorMessage(err) });
+    }
+  }
+
+  if (settings.mode === 'remote' && settings.server_url) {
+    checks.push(await checkRemoteServer(settings.server_url));
+  }
+
+  const domain = loadDomainProfile(domainProfilePath());
+  checks.push({
+    name: 'domain_profile',
+    ok: domain.typology_categories.length > 0,
+    detail: `${domain.typology_categories.length} typology categories available.`,
+  });
+
+  return { settings, checks, ok: checks.every((check) => check.ok) };
+}
+
 export function saveDomainProfileHandler(ctx: McpContext, args: z.infer<typeof domainProfileParams>): { path: string } {
   return ctx.saveDomainProfile(args.content);
 }
@@ -191,4 +302,21 @@ function requireLessonService(ctx: McpContext) {
 
 function json(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+async function checkRemoteServer(serverUrl: string): Promise<{ name: string; ok: boolean; detail: string }> {
+  try {
+    const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/__birdie`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return { name: 'remote_server', ok: false, detail: `HTTP ${res.status}` };
+    const body = (await res.json()) as { birdie?: boolean };
+    return body.birdie === true
+      ? { name: 'remote_server', ok: true, detail: serverUrl }
+      : { name: 'remote_server', ok: false, detail: 'Server did not identify as Birdie.' };
+  } catch (err) {
+    return { name: 'remote_server', ok: false, detail: errorMessage(err) };
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

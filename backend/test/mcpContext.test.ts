@@ -2,9 +2,14 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { readConfigState } from '../src/config.js';
+import { readConfigState, saveDomainProfile } from '../src/config.js';
 import { buildMcpContext } from '../src/mcpContext.js';
-import { completeSetupHandler } from '../src/mcp/tools.js';
+import {
+  completeSetupHandler,
+  getBirdieSettingsHandler,
+  getDomainProfileHandler,
+  updateBirdieSettingsHandler,
+} from '../src/mcp/tools.js';
 
 describe('mcp context setup', () => {
   let oldConfigPath: string | undefined;
@@ -35,5 +40,25 @@ describe('mcp context setup', () => {
 
     expect(() => completeSetupHandler(buildMcpContext(), { mode: 'local' })).toThrow();
     expect(readConfigState().firstRun).toBe(true);
+  });
+
+  it('exposes settings before setup', () => {
+    expect(getBirdieSettingsHandler()).toMatchObject({ configured: false, mode: 'unconfigured' });
+  });
+
+  it('updates settings from MCP tools', () => {
+    expect(updateBirdieSettingsHandler({ mode: 'remote', server_url: 'https://birdie.example.com/' })).toEqual({
+      mode: 'remote',
+      server_url: 'https://birdie.example.com',
+    });
+    expect(readConfigState().config).toEqual({ mode: 'remote', server_url: 'https://birdie.example.com' });
+  });
+
+  it('reads domain profile from MCP tools', () => {
+    saveDomainProfile('# Domain\nEngineering\n\n# Typology\n- design_feedback: Feedback on design.\n');
+    expect(getDomainProfileHandler()).toMatchObject({
+      customized: true,
+      typology_categories: ['design_feedback'],
+    });
   });
 });

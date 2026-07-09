@@ -23496,15 +23496,15 @@ var init_parseUtil = __esm({
           message: issueData.message
         };
       }
-      let errorMessage = "";
+      let errorMessage3 = "";
       const maps = errorMaps.filter((m) => !!m).slice().reverse();
       for (const map of maps) {
-        errorMessage = map(fullIssue, { data, defaultError: errorMessage }).message;
+        errorMessage3 = map(fullIssue, { data, defaultError: errorMessage3 }).message;
       }
       return {
         ...issueData,
         path: fullPath,
-        message: errorMessage
+        message: errorMessage3
       };
     };
     EMPTY_PATH = [];
@@ -27255,19 +27255,19 @@ var init_Refs = __esm({
 });
 
 // node_modules/.bun/zod-to-json-schema@3.25.2+27912429049419a2/node_modules/zod-to-json-schema/dist/esm/errorMessages.js
-function addErrorMessage(res, key, errorMessage, refs) {
+function addErrorMessage(res, key, errorMessage3, refs) {
   if (!refs?.errorMessages)
     return;
-  if (errorMessage) {
+  if (errorMessage3) {
     res.errorMessage = {
       ...res.errorMessage,
-      [key]: errorMessage
+      [key]: errorMessage3
     };
   }
 }
-function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
+function setResponseValueAndErrors(res, key, value, errorMessage3, refs) {
   res[key] = value;
-  addErrorMessage(res, key, errorMessage, refs);
+  addErrorMessage(res, key, errorMessage3, refs);
 }
 var init_errorMessages = __esm({
   "node_modules/.bun/zod-to-json-schema@3.25.2+27912429049419a2/node_modules/zod-to-json-schema/dist/esm/errorMessages.js"() {
@@ -49794,8 +49794,8 @@ var require_socks5_client = __commonJS({
           return;
         }
         if (reply !== REPLY_CODES.SUCCEEDED) {
-          const errorMessage = this.getReplyErrorMessage(reply);
-          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage}`, `UND_ERR_SOCKS5_REPLY_${reply}`);
+          const errorMessage3 = this.getReplyErrorMessage(reply);
+          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage3}`, `UND_ERR_SOCKS5_REPLY_${reply}`);
         }
         let boundAddress;
         let offset = 4;
@@ -65157,6 +65157,9 @@ var init_index_DtiOmYCK = __esm({
   );
 })();
 
+// backend/src/cli.ts
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+
 // backend/src/db.ts
 import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
@@ -65186,9 +65189,6 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
       submitted_by TEXT NOT NULL,
-      submitted_by_role TEXT NOT NULL,
-      junior_name TEXT,
-      senior_name TEXT,
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
       playbook_ref TEXT,
@@ -65221,6 +65221,16 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
+  dropLegacyRoleColumns(db);
+}
+function dropLegacyRoleColumns(db) {
+  const columns = db.prepare("PRAGMA table_info(traces)").all();
+  const names = new Set(columns.map((column) => column.name));
+  for (const column of ["submitted_by_role", "junior_name", "senior_name"]) {
+    if (names.has(column)) {
+      db.exec(`ALTER TABLE traces DROP COLUMN ${column}`);
+    }
+  }
 }
 
 // backend/src/domain.ts
@@ -65307,6 +65317,20 @@ function readConfigState() {
   }
   return state;
 }
+function readSettingsSummary() {
+  const state = readConfigState();
+  const mode = state.config?.mode ?? "unconfigured";
+  return {
+    configured: !state.firstRun && Boolean(state.config),
+    mode,
+    server_url: state.config?.mode === "remote" ? state.config.server_url : void 0,
+    configPath: state.configPath,
+    birdieDir: state.birdieDir,
+    dbPath: state.dbPath,
+    domainPath: state.domainPath,
+    reviewQueueUrl: state.config?.mode === "remote" ? state.config.server_url : `http://127.0.0.1:${localWebPort()}`
+  };
+}
 function writeConfig(config2) {
   const path = configPath();
   mkdirSync2(dirname2(path), { recursive: true });
@@ -65324,6 +65348,14 @@ function saveDomainProfile(content) {
   writeFileSync(path, content.endsWith("\n") ? content : `${content}
 `);
   return { path };
+}
+function readDomainProfileFile() {
+  const path = domainProfilePath();
+  try {
+    return { path, content: readFileSync2(path, "utf-8"), customized: true };
+  } catch {
+    return { path, content: "", customized: false };
+  }
 }
 function expandHome(path) {
   return path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
@@ -71620,8 +71652,8 @@ var Protocol = class {
                   if (queuedMessage.type === "response") {
                     resolver(message);
                   } else {
-                    const errorMessage = message;
-                    const error2 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                    const errorMessage3 = message;
+                    const error2 = new McpError(errorMessage3.error.code, errorMessage3.error.message, errorMessage3.error.data);
                     resolver(error2);
                   }
                 } else {
@@ -72921,23 +72953,23 @@ var Server = class extends Protocol {
       const wrappedHandler = async (request, extra) => {
         const validatedRequest = safeParse2(CallToolRequestSchema, request);
         if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+          const errorMessage3 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage3}`);
         }
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+            const errorMessage3 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage3}`);
           }
           return taskValidationResult.data;
         }
         const validationResult = safeParse2(CallToolResultSchema, result);
         if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+          const errorMessage3 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage3}`);
         }
         return validationResult.data;
       };
@@ -77807,6 +77839,12 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
     load: async () => buildSetupPrompt(ctxFactory().domainProfile)
   });
   mcp.addPrompt({
+    name: "configure-birdie",
+    description: "Inspect or change Birdie settings, including local vs shared server mode and category/domain profile.",
+    arguments: [],
+    load: async () => buildConfigurePrompt()
+  });
+  mcp.addPrompt({
     name: "extract-lesson",
     description: "Extract a mentorship lesson from a captured example.",
     arguments: [{ name: "trace_id", description: "The example to extract from", required: true }],
@@ -77849,6 +77887,18 @@ Guidance.
 
 Current default:
 ${profile.raw}`;
+}
+function buildConfigurePrompt() {
+  return `Help the user inspect or change Birdie settings.
+
+Steps:
+1. Call get_birdie_settings and summarize the current mode, shared server URL if present, review queue URL, and config/domain file paths.
+2. Ask what they want to change only if their request is ambiguous.
+3. To switch to local storage, call update_birdie_settings with mode="local".
+4. To connect to a shared local or remote backend, call update_birdie_settings with mode="remote" and server_url set to the provided URL.
+5. To review categories, call get_domain_profile.
+6. To change categories, ask for the domain and what edits matter, then write a markdown profile with # Domain, # Typology, and # What counts as mentorship-worthy, and call save_domain_profile.
+7. If something looks broken, call birdie_doctor and explain the failing check in plain language.`;
 }
 function buildExtractLessonPrompt(profile, traceId) {
   return `Extract a mentorship lesson from trace_id="${traceId}".
@@ -77906,6 +77956,25 @@ var setupParams = external_exports.object({
 });
 var domainProfileParams = external_exports.object({ content: external_exports.string().min(1) });
 var emptyParams = external_exports.object({});
+var updateSettingsParams = external_exports.object({
+  mode: external_exports.enum(["local", "remote"]).optional(),
+  server_url: external_exports.string().url().optional()
+}).superRefine((data, ctx) => {
+  if (data.mode === "remote" && !data.server_url) {
+    ctx.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      message: 'server_url is required when mode is "remote"',
+      path: ["server_url"]
+    });
+  }
+  if (!data.mode && data.server_url) {
+    ctx.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      message: "mode is required when server_url is provided",
+      path: ["mode"]
+    });
+  }
+});
 var captureTraceParams = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
@@ -77960,6 +78029,30 @@ function registerTools(server, ctxFactory = buildMcpContext) {
     description: "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server.",
     parameters: setupParams,
     execute: async (args) => json(completeSetupHandler(ctxFactory(), args))
+  });
+  mcp.addTool({
+    name: "get_birdie_settings",
+    description: "Show whether Birdie is configured, which mode it uses, the shared server URL if any, and local file paths.",
+    parameters: emptyParams,
+    execute: async () => json(getBirdieSettingsHandler())
+  });
+  mcp.addTool({
+    name: "update_birdie_settings",
+    description: 'Switch Birdie between local storage and a shared remote server. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
+    parameters: updateSettingsParams,
+    execute: async (args) => json(updateBirdieSettingsHandler(args))
+  });
+  mcp.addTool({
+    name: "get_domain_profile",
+    description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
+    parameters: emptyParams,
+    execute: async () => json(getDomainProfileHandler())
+  });
+  mcp.addTool({
+    name: "birdie_doctor",
+    description: "Run quick setup checks and explain what the user should fix next.",
+    parameters: emptyParams,
+    execute: async () => json(await birdieDoctorHandler())
   });
   mcp.addTool({
     name: "save_domain_profile",
@@ -78042,6 +78135,57 @@ function completeSetupHandler(ctx, args) {
   const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url } : { mode: "local" };
   return ctx.completeSetup(config2);
 }
+function getBirdieSettingsHandler() {
+  return readSettingsSummary();
+}
+function updateBirdieSettingsHandler(args) {
+  if (!args.mode) throw new Error("mode is required.");
+  const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url } : { mode: "local" };
+  if (config2.mode === "local") {
+    const db = openDb(readSettingsSummary().dbPath);
+    db.close();
+  }
+  return writeConfig(config2);
+}
+function getDomainProfileHandler() {
+  const saved = readDomainProfileFile();
+  const loaded = loadDomainProfile(domainProfilePath());
+  return {
+    path: saved.path,
+    customized: saved.customized,
+    content: saved.customized ? saved.content : loaded.raw,
+    typology_categories: loaded.typology_categories
+  };
+}
+async function birdieDoctorHandler() {
+  const settings = readSettingsSummary();
+  const checks = [
+    {
+      name: "config",
+      ok: settings.configured,
+      detail: settings.configured ? `Birdie is configured for ${settings.mode} mode.` : "Birdie is not configured. Run setup-birdie or update_birdie_settings."
+    }
+  ];
+  if (settings.mode === "local") {
+    try {
+      const db = openDb(settings.dbPath);
+      db.close();
+      checks.push({ name: "database", ok: true, detail: settings.dbPath });
+    } catch (err) {
+      checks.push({ name: "database", ok: false, detail: errorMessage(err) });
+    }
+  }
+  if (settings.mode === "remote" && settings.server_url) {
+    checks.push(await checkRemoteServer(settings.server_url));
+  }
+  const domain = loadDomainProfile(domainProfilePath());
+  checks.push({
+    name: "domain_profile",
+    ok: domain.typology_categories.length > 0,
+    detail: `${domain.typology_categories.length} typology categories available.`
+  });
+  return { settings, checks, ok: checks.every((check2) => check2.ok) };
+}
 function saveDomainProfileHandler(ctx, args) {
   return ctx.saveDomainProfile(args.content);
 }
@@ -78059,6 +78203,19 @@ function requireLessonService(ctx) {
 function json(value) {
   return JSON.stringify(value, null, 2);
 }
+async function checkRemoteServer(serverUrl) {
+  try {
+    const res = await fetch(`${serverUrl.replace(/\/+$/, "")}/__birdie`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return { name: "remote_server", ok: false, detail: `HTTP ${res.status}` };
+    const body = await res.json();
+    return body.birdie === true ? { name: "remote_server", ok: true, detail: serverUrl } : { name: "remote_server", ok: false, detail: "Server did not identify as Birdie." };
+  } catch (err) {
+    return { name: "remote_server", ok: false, detail: errorMessage(err) };
+  }
+}
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
 
 // backend/src/mcp/server.ts
 function createMcpServer(ctxFactory = buildMcpContext) {
@@ -78071,9 +78228,37 @@ function createMcpServer(ctxFactory = buildMcpContext) {
 // backend/src/cli.ts
 async function main() {
   const mode = process.argv[2] ?? "both";
-  if (!["both", "mcp", "web"].includes(mode)) {
-    throw new Error(`Unknown mode '${mode}'. Use 'mcp', 'web', or omit the mode for both.`);
+  if (["both", "mcp", "web"].includes(mode)) {
+    await runServerMode(mode);
+    return;
   }
+  const args = process.argv.slice(3);
+  switch (mode) {
+    case "help":
+    case "--help":
+    case "-h":
+      printHelp();
+      return;
+    case "status":
+      printStatus();
+      return;
+    case "doctor":
+      await runDoctor();
+      return;
+    case "setup":
+      runSetup(args);
+      return;
+    case "config":
+      runConfig(args);
+      return;
+    case "domain":
+      runDomain(args);
+      return;
+    default:
+      throw new Error(`Unknown command '${mode}'. Run 'birdie help' for usage.`);
+  }
+}
+async function runServerMode(mode) {
   if (mode === "web" || mode === "both") {
     const port = localWebPort();
     createServer(buildContext()).listen(port, () => {
@@ -78084,6 +78269,139 @@ async function main() {
     const server = createMcpServer(buildMcpContext);
     await server.start({ transportType: "stdio" });
   }
+}
+function printHelp() {
+  console.log(`Birdie
+
+Usage:
+  birdie [both|mcp|web]              Start Birdie servers (default: both)
+  birdie status                      Show current setup and file paths
+  birdie doctor                      Check config, database, domain, and remote server reachability
+  birdie setup local                 Use local ~/.birdie storage
+  birdie setup remote <url>          Use a shared Birdie server
+  birdie config show                 Print config JSON
+  birdie config path                 Print config/domain/db paths
+  birdie domain show                 Print the saved domain profile, or the default if unset
+  birdie domain set <file>           Save a domain profile from a markdown file
+
+Environment overrides:
+  BIRDIE_CONFIG_PATH, DB_PATH, DOMAIN_PROFILE_PATH, PORT
+`);
+}
+function printStatus() {
+  const summary = readSettingsSummary();
+  console.log(JSON.stringify(summary, null, 2));
+}
+async function runDoctor() {
+  const summary = readSettingsSummary();
+  const checks = [];
+  checks.push({
+    name: "config",
+    ok: summary.configured,
+    detail: summary.configured ? `${summary.mode} mode in ${summary.configPath}` : `not configured; run 'birdie setup local' or 'birdie setup remote <url>'`
+  });
+  if (summary.mode === "local") {
+    try {
+      const db = openDb(summary.dbPath);
+      db.close();
+      checks.push({ name: "database", ok: true, detail: summary.dbPath });
+    } catch (err) {
+      checks.push({ name: "database", ok: false, detail: errorMessage2(err) });
+    }
+  }
+  if (summary.mode === "remote" && summary.server_url) {
+    checks.push(await checkRemote(summary.server_url));
+  }
+  const domain = loadDomainProfile(summary.domainPath);
+  checks.push({
+    name: "domain",
+    ok: domain.typology_categories.length > 0,
+    detail: `${domain.typology_categories.length} categories from ${existsSync3(summary.domainPath) ? summary.domainPath : "default profile"}`
+  });
+  for (const check2 of checks) {
+    console.log(`${check2.ok ? "OK" : "FAIL"} ${check2.name}: ${check2.detail}`);
+  }
+  if (checks.some((check2) => !check2.ok)) process.exitCode = 1;
+}
+function runSetup(args) {
+  const mode = args[0];
+  if (mode === "local") {
+    const db = openDb(readSettingsSummary().dbPath);
+    db.close();
+    printWrittenConfig(writeConfig({ mode: "local" }));
+    return;
+  }
+  if (mode === "remote") {
+    const serverUrl = args[1];
+    if (!serverUrl) throw new Error("Usage: birdie setup remote <url>");
+    printWrittenConfig(writeConfig({ mode: "remote", server_url: normalizeUrl(serverUrl) }));
+    return;
+  }
+  throw new Error("Usage: birdie setup local | birdie setup remote <url>");
+}
+function runConfig(args) {
+  const action = args[0] ?? "show";
+  const state = readConfigState();
+  if (action === "show") {
+    console.log(JSON.stringify(state.config ?? { mode: "unconfigured" }, null, 2));
+    return;
+  }
+  if (action === "path" || action === "paths") {
+    console.log(
+      JSON.stringify(
+        {
+          configPath: state.configPath,
+          birdieDir: state.birdieDir,
+          dbPath: state.dbPath,
+          domainPath: state.domainPath
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+  throw new Error("Usage: birdie config show | birdie config path");
+}
+function runDomain(args) {
+  const action = args[0] ?? "show";
+  if (action === "show") {
+    const profile = readDomainProfileFile();
+    if (profile.customized) {
+      console.log(profile.content.trimEnd());
+    } else {
+      console.log(loadDomainProfile(profile.path).raw.trimEnd());
+    }
+    return;
+  }
+  if (action === "set") {
+    const file = args[1];
+    if (!file) throw new Error("Usage: birdie domain set <file>");
+    const result = saveDomainProfile(readFileSync3(file, "utf-8"));
+    console.log(`Saved domain profile to ${result.path}`);
+    return;
+  }
+  throw new Error("Usage: birdie domain show | birdie domain set <file>");
+}
+function printWrittenConfig(config2) {
+  console.log(`Birdie configured for ${config2.mode} mode.`);
+  if (config2.mode === "remote") console.log(`Server: ${config2.server_url}`);
+}
+async function checkRemote(serverUrl) {
+  try {
+    const res = await fetch(`${serverUrl.replace(/\/+$/, "")}/__birdie`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return { name: "remote", ok: false, detail: `${serverUrl} returned HTTP ${res.status}` };
+    const body = await res.json();
+    return body.birdie === true ? { name: "remote", ok: true, detail: serverUrl } : { name: "remote", ok: false, detail: `${serverUrl} did not identify as Birdie` };
+  } catch (err) {
+    return { name: "remote", ok: false, detail: errorMessage2(err) };
+  }
+}
+function normalizeUrl(value) {
+  return new URL(value).toString().replace(/\/+$/, "");
+}
+function errorMessage2(err) {
+  return err instanceof Error ? err.message : String(err);
 }
 main().catch((err) => {
   console.error(err);
