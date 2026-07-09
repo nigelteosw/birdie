@@ -9,5 +9,8 @@
     "dev:backend": "bun run --cwd backend dev",
     "dev:web": "bun run --cwd web dev",
     "build:plugin-binaries": "bash scripts/build-plugin-binaries.sh"
+  },
+  "patchedDependencies": {
+    "fastmcp@1.27.7": "patches/fastmcp@1.27.7.patch"
   }
 }

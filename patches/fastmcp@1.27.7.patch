@@ -1,0 +1,24 @@
+diff --git a/dist/FastMCP.js b/dist/FastMCP.js
+index 6b18695adf24eb41241b6a04d7a5dfabda6f01fb..39d9fc6e1d1bbfcf60e494b70e6093e1d602a03a 100644
+--- a/dist/FastMCP.js
++++ b/dist/FastMCP.js
+@@ -251,6 +251,7 @@ var FastMCPSession = class extends FastMCPSessionEventEmitter {
+       this.#capabilities.prompts = {};
+     }
+     this.#capabilities.logging = {};
++    this.#capabilities.completions = {};
+     this.#server = new Server(
+       { name, version },
+       { capabilities: this.#capabilities, instructions }
+diff --git a/src/FastMCP.ts b/src/FastMCP.ts
+index e03f69fba9520aa69c185155fb98a9fddd8ae17f..e0e94d38026056e05657030dd40a51077570533c 100644
+--- a/src/FastMCP.ts
++++ b/src/FastMCP.ts
+@@ -628,6 +628,7 @@ export class FastMCPSession<
+     }
+ 
+     this.#capabilities.logging = {};
++    this.#capabilities.completions = {};
+ 
+     this.#server = new Server(
+       { name: name, version: version },
