@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const BINARIES = {
@@ -26,12 +27,18 @@ function main() {
     throw new Error(`Birdie has no compiled binary for platform "${key}". Supported: ${Object.keys(BINARIES).join(', ')}`);
   }
 
+  const gzPath = path.join(pluginRoot, 'bin', `${name}.gz`);
+  const compressed = fs.readFileSync(gzPath);
+  const gzHash = crypto.createHash('sha256').update(compressed).digest('hex');
+
   const cachedPath = path.join(pluginData, name);
-  if (!fs.existsSync(cachedPath)) {
-    const gzPath = path.join(pluginRoot, 'bin', `${name}.gz`);
-    const compressed = fs.readFileSync(gzPath);
+  const hashPath = `${cachedPath}.sha256`;
+  const cachedHash = fs.existsSync(hashPath) ? fs.readFileSync(hashPath, 'utf8').trim() : null;
+
+  if (!fs.existsSync(cachedPath) || cachedHash !== gzHash) {
     fs.mkdirSync(pluginData, { recursive: true });
     fs.writeFileSync(cachedPath, zlib.gunzipSync(compressed), { mode: 0o755 });
+    fs.writeFileSync(hashPath, gzHash);
   }
 
   execFileSync(cachedPath, process.argv.slice(2), { stdio: 'inherit' });
