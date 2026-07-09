@@ -46,9 +46,6 @@ function migrate(db: SqliteDb): void {
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
       submitted_by TEXT NOT NULL,
-      submitted_by_role TEXT NOT NULL,
-      junior_name TEXT,
-      senior_name TEXT,
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
       playbook_ref TEXT,
@@ -81,4 +78,15 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
+  dropLegacyRoleColumns(db);
+}
+
+function dropLegacyRoleColumns(db: SqliteDb): void {
+  const columns = db.prepare('PRAGMA table_info(traces)').all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+  for (const column of ['submitted_by_role', 'junior_name', 'senior_name']) {
+    if (names.has(column)) {
+      db.exec(`ALTER TABLE traces DROP COLUMN ${column}`);
+    }
+  }
 }
