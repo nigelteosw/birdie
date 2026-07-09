@@ -9,9 +9,6 @@ export default function CaptureForm({ onCaptured }: Props) {
   const [beforeText, setBeforeText] = useState('');
   const [afterText, setAfterText] = useState('');
   const [submittedBy, setSubmittedBy] = useState('');
-  const [submittedByRole, setSubmittedByRole] = useState<'senior' | 'junior'>('senior');
-  const [juniorName, setJuniorName] = useState('');
-  const [seniorName, setSeniorName] = useState('');
   const [playbookRef, setPlaybookRef] = useState('');
   const [playbookText, setPlaybookText] = useState('');
   const [contextNote, setContextNote] = useState('');
@@ -25,9 +22,6 @@ export default function CaptureForm({ onCaptured }: Props) {
         before_text: beforeText,
         after_text: afterText,
         submitted_by: submittedBy,
-        submitted_by_role: submittedByRole,
-        junior_name: juniorName || undefined,
-        senior_name: seniorName || undefined,
         playbook_ref: playbookRef || undefined,
         playbook_text: playbookText || undefined,
         context_note: contextNote || undefined,
@@ -43,8 +37,8 @@ export default function CaptureForm({ onCaptured }: Props) {
   }
 
   return (
-    <section className="panel">
-      <h2>Capture an example</h2>
+    <details className="panel capture-panel">
+      <summary>Capture an example</summary>
       <form onSubmit={submit} className="capture-grid">
         <label className="wide">
           Before
@@ -57,21 +51,6 @@ export default function CaptureForm({ onCaptured }: Props) {
         <label>
           Submitted by
           <input value={submittedBy} onChange={(event) => setSubmittedBy(event.target.value)} required />
-        </label>
-        <label>
-          Role
-          <select value={submittedByRole} onChange={(event) => setSubmittedByRole(event.target.value as 'senior' | 'junior')}>
-            <option value="senior">Senior</option>
-            <option value="junior">Junior</option>
-          </select>
-        </label>
-        <label>
-          Junior
-          <input value={juniorName} onChange={(event) => setJuniorName(event.target.value)} />
-        </label>
-        <label>
-          Senior
-          <input value={seniorName} onChange={(event) => setSeniorName(event.target.value)} />
         </label>
         <label>
           Playbook ref
@@ -90,6 +69,6 @@ export default function CaptureForm({ onCaptured }: Props) {
           {status && <span className="status">{status}</span>}
         </div>
       </form>
-    </section>
+    </details>
   );
 }
