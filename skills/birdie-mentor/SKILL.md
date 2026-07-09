@@ -1,6 +1,6 @@
 ---
 name: birdie-mentor
-description: Capture before/after edits as mentorship examples, extract lessons, review them, and answer questions from reviewed lessons.
+description: Capture before/after edits as mentorship examples, extract lessons, and review them.
 ---
 
 # Birdie Mentor
@@ -18,9 +18,8 @@ Offer to customize categories. If the user wants that, ask what field they work 
 1. Capture a before/after edit with `capture_trace`.
 2. Extract a candidate lesson using the `extract-lesson` prompt, or manually call `get_trace` then `save_extraction` or `skip_extraction`.
 3. Review with `list_lessons`, `review_lesson`, and `promote_lesson`.
-4. Search reviewed lessons with `GET /lessons` query params to find mentorship examples.
 
-Only promoted lessons should be used when answering. If Birdie returns no reviewed examples, say so plainly.
+Promoted lessons are also browsable by reviewers on the web review queue (My Lessons / Shared Pool tabs).
 
 ## Surfacing the review queue
 
