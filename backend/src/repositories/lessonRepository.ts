@@ -138,11 +138,28 @@ function lessonSelect(): string {
 function filterWhere(filters: LessonFilters): { where: string; params: string[] } {
   const clauses: string[] = [];
   const params: string[] = [];
-  for (const key of ['status', 'typology', 'playbook_ref'] as const) {
+  for (const key of ['status', 'typology', 'playbook_ref', 'submitted_by'] as const) {
     const value = filters[key];
     if (value) {
       clauses.push(key === 'status' || key === 'typology' ? `l.${key} = ?` : `t.${key} = ?`);
       params.push(value);
+    }
+  }
+  if (filters.q) {
+    const keywords = filters.q
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((word) => word.length > 2);
+    if (keywords.length > 0) {
+      clauses.push(
+        `(${keywords
+          .map((keyword) => {
+            const value = `%${keyword}%`;
+            params.push(value, value, value);
+            return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
+          })
+          .join(' OR ')})`
+      );
     }
   }
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };

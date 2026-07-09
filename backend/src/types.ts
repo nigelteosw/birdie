@@ -78,6 +78,8 @@ export interface LessonFilters {
   status?: LessonStatus;
   typology?: string;
   playbook_ref?: string;
+  submitted_by?: string;
+  q?: string;
 }
 
 export interface TraceServiceLike {

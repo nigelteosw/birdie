@@ -29,6 +29,8 @@ export function lessonsRouter(ctx: AppContext): Router {
         status: status.data,
         typology: req.query.typology as string | undefined,
         playbook_ref: req.query.playbook_ref as string | undefined,
+        submitted_by: req.query.submitted_by as string | undefined,
+        q: req.query.q as string | undefined,
       })
     );
   });
