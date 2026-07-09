@@ -8,6 +8,7 @@ export default function App() {
   return (
     <main className="shell">
       <header className="topbar">
+        <img src="/birdie-mascot.png" alt="Birdie" className="mascot" />
         <div>
           <h1>Birdie</h1>
           <p>Capture examples. Review lessons. Add only confirmed guidance to the shared library.</p>

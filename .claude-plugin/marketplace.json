@@ -1,0 +1,13 @@
+{
+  "name": "birdie",
+  "owner": {
+    "name": "Nigel Teo"
+  },
+  "plugins": [
+    {
+      "name": "birdie",
+      "source": "./",
+      "description": "Local-first mentorship capture for reviewed before/after edit lessons."
+    }
+  ]
+}

@@ -4,8 +4,12 @@
   "description": "Local-first mentorship capture for reviewed before/after edit lessons.",
   "mcpServers": {
     "birdie": {
-      "command": "bun",
-      "args": ["backend/src/cli.ts", "mcp"]
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/launch.js", "mcp"],
+      "env": {
+        "CLAUDE_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
+      }
     }
   },
   "skills": ["skills/birdie-mentor"]
