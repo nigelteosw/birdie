@@ -93,3 +93,4 @@ git add bin/birdie.mjs
 - `GET /lessons/ask/senior-approach`
 - `GET /lessons/ask/junior-struggles`
 - `GET /domain`
+- `GET /__birdie` — identity marker used to detect an existing Birdie instance before reusing its port
