@@ -1,9 +1,6 @@
 export interface Trace {
   id: string;
   submitted_by: string;
-  submitted_by_role: 'senior' | 'junior';
-  junior_name: string | null;
-  senior_name: string | null;
   before_text: string;
   after_text: string;
   playbook_ref: string | null;
@@ -17,8 +14,7 @@ export interface Trace {
 export interface Lesson {
   id: string;
   trace_id: string;
-  junior_name: string | null;
-  senior_name: string | null;
+  submitted_by: string;
   playbook_ref: string | null;
   quote: string;
   quote_verified: boolean;
@@ -38,16 +34,27 @@ export interface DomainProfile {
   typology_categories: string[];
 }
 
-export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by' | 'submitted_by_role'> &
-  Partial<Pick<Trace, 'junior_name' | 'senior_name' | 'playbook_ref' | 'playbook_text' | 'context_note'>>;
+export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by'> &
+  Partial<Pick<Trace, 'playbook_ref' | 'playbook_text' | 'context_note'>>;
 
 export function captureTrace(input: NewTrace): Promise<Trace> {
   return post('/traces', input);
 }
 
-export function listLessons(status?: Lesson['status']): Promise<Lesson[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : '';
-  return get(`/lessons${query}`);
+export interface LessonFilters {
+  status?: Lesson['status'];
+  typology?: string;
+  submitted_by?: string;
+  q?: string;
+}
+
+export function listLessons(filters: LessonFilters = {}): Promise<Lesson[]> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) search.set(key, value);
+  }
+  const text = search.toString();
+  return get(`/lessons${text ? `?${text}` : ''}`);
 }
 
 export function getDomainProfile(): Promise<DomainProfile> {
