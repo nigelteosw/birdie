@@ -1,11 +1,5 @@
 import { requestJson } from './http.js';
-import type {
-  JuniorStrugglesResult,
-  LessonEdit,
-  LessonFilters,
-  LessonWithTrace,
-  PromotePayload,
-} from '../types.js';
+import type { LessonEdit, LessonFilters, LessonWithTrace, PromotePayload } from '../types.js';
 
 export class RemoteLessonService {
   constructor(private serverUrl: string) {}
@@ -35,17 +29,6 @@ export class RemoteLessonService {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-  }
-
-  askSeniorApproach(question: string, senior_name?: string): Promise<LessonWithTrace[]> {
-    return requestJson<LessonWithTrace[]>(
-      this.serverUrl,
-      `/lessons/ask/senior-approach${query({ question, senior_name })}`
-    );
-  }
-
-  askJuniorStruggles(junior_name?: string): Promise<JuniorStrugglesResult> {
-    return requestJson<JuniorStrugglesResult>(this.serverUrl, `/lessons/ask/junior-struggles${query({ junior_name })}`);
   }
 }
 

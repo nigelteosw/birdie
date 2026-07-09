@@ -24,11 +24,8 @@ describe('services', () => {
   it('extracts once and marks the trace extracted', () => {
     const trace = traceService.capture({
       submitted_by: 'Jane',
-      submitted_by_role: 'junior',
       before_text: 'uncapped indemnity',
       after_text: 'capped indemnity',
-      junior_name: 'Jane',
-      senior_name: 'Sarah',
     });
     const lesson = traceService.extract({
       trace_id: trace.id,
@@ -53,7 +50,6 @@ describe('services', () => {
   it('rejects unknown categories on extraction and review', () => {
     const trace = traceService.capture({
       submitted_by: 'Jane',
-      submitted_by_role: 'junior',
       before_text: 'a',
       after_text: 'b',
     });
@@ -80,7 +76,6 @@ describe('services', () => {
   it('rechecks quote verification on edit and promotion', () => {
     const trace = traceService.capture({
       submitted_by: 'Jane',
-      submitted_by_role: 'junior',
       before_text: 'uncapped indemnity',
       after_text: 'capped indemnity',
     });

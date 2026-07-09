@@ -2,13 +2,7 @@ import type { DomainProfile } from '../domain.js';
 import { verifyQuote } from '../extraction.js';
 import type { LessonRepository } from '../repositories/lessonRepository.js';
 import type { TraceRepository } from '../repositories/traceRepository.js';
-import type {
-  JuniorStrugglesResult,
-  LessonEdit,
-  LessonFilters,
-  LessonWithTrace,
-  PromotePayload,
-} from '../types.js';
+import type { LessonEdit, LessonFilters, LessonWithTrace, PromotePayload } from '../types.js';
 
 export class LessonService {
   constructor(
@@ -41,14 +35,6 @@ export class LessonService {
       ...payload,
       quote_verified: payload.quote === undefined ? current.quote_verified : this.verifyLessonQuote(current.trace_id, payload.quote),
     });
-  }
-
-  askSeniorApproach(question: string, senior_name?: string): LessonWithTrace[] {
-    return this.lessons.searchPromoted(question, senior_name);
-  }
-
-  askJuniorStruggles(junior_name?: string): JuniorStrugglesResult {
-    return this.lessons.strugglesFor(junior_name);
   }
 
   private requireLesson(id: string): LessonWithTrace {
