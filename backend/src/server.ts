@@ -13,6 +13,11 @@ export function createServer(ctx: AppContext): Express {
   app.get('/domain', (_req, res) => {
     res.json({ typology_categories: ctx.domainProfile.typology_categories });
   });
+  // Identity marker so other Birdie processes can confirm a port is really
+  // ours before reusing it, instead of assuming whatever answers is Birdie.
+  app.get('/__birdie', (_req, res) => {
+    res.json({ birdie: true });
+  });
 
   const dist = findWebDist();
   if (dist) {

@@ -1,5 +1,5 @@
 import type { Server } from 'node:http';
-import { readConfigState, writeConfig, saveDomainProfile, localDbPath, domainProfilePath } from './config.js';
+import { readConfigState, writeConfig, saveDomainProfile, localDbPath, domainProfilePath, localWebPort } from './config.js';
 import { buildLocalContext, type AppContext } from './context.js';
 import { openDb } from './db.js';
 import { createServer } from './server.js';
@@ -76,13 +76,60 @@ function completeSetup(config: BirdieConfig): BirdieConfig {
 
 async function startLocalReviewQueue(ctx: AppContext): Promise<{ url: string }> {
   if (runningWebUrl) return { url: runningWebUrl };
-  const requestedPort = Number(process.env.PORT ?? 0);
+  const requestedPort = localWebPort();
   const app = createServer(ctx);
-  await new Promise<void>((resolve) => {
-    runningWebServer = app.listen(requestedPort, '127.0.0.1', resolve);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const server = app.listen(requestedPort, '127.0.0.1');
+      server.once('listening', () => {
+        runningWebServer = server;
+        resolve();
+      });
+      server.once('error', reject);
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      const candidateUrl = `http://127.0.0.1:${requestedPort}`;
+      if (await isBirdieServer(candidateUrl)) {
+        // Another Birdie session already owns this port — reuse it instead of
+        // failing, so multiple Claude Code windows share one review queue.
+        runningWebUrl = candidateUrl;
+        return { url: runningWebUrl };
+      }
+      // Something else is bound to the fixed port. Fall back to any free port
+      // rather than assuming it's Birdie and handing back the wrong URL.
+      return startOnEphemeralPort(app);
+    }
+    throw err;
+  }
   const address = runningWebServer!.address();
   const port = typeof address === 'object' && address ? address.port : requestedPort;
+  runningWebUrl = `http://127.0.0.1:${port}`;
+  return { url: runningWebUrl };
+}
+
+async function isBirdieServer(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/__birdie`, { signal: AbortSignal.timeout(500) });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { birdie?: boolean };
+    return body.birdie === true;
+  } catch {
+    return false;
+  }
+}
+
+async function startOnEphemeralPort(app: ReturnType<typeof createServer>): Promise<{ url: string }> {
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(0, '127.0.0.1');
+    server.once('listening', () => {
+      runningWebServer = server;
+      resolve();
+    });
+    server.once('error', reject);
+  });
+  const address = runningWebServer!.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
   runningWebUrl = `http://127.0.0.1:${port}`;
   return { url: runningWebUrl };
 }

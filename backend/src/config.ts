@@ -12,8 +12,14 @@ export interface ConfigState {
   config?: BirdieConfig;
 }
 
+export const DEFAULT_PORT = 6677;
+
 export function birdieDir(): string {
   return resolve(homedir(), '.birdie');
+}
+
+export function localWebPort(): number {
+  return Number(process.env.PORT ?? DEFAULT_PORT);
 }
 
 export function configPath(): string {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { buildContext } from './context.js';
+import { localWebPort } from './config.js';
 import { buildMcpContext } from './mcpContext.js';
 import { createMcpServer } from './mcp/server.js';
 import { createServer } from './server.js';
@@ -13,7 +14,7 @@ async function main(): Promise<void> {
   }
 
   if (mode === 'web' || mode === 'both') {
-    const port = Number(process.env.PORT ?? 4000);
+    const port = localWebPort();
     createServer(buildContext()).listen(port, () => {
       console.error(`Birdie REST API + web UI listening on http://localhost:${port}`);
     });

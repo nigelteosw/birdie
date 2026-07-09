@@ -91,7 +91,8 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
   mcp.addTool({
     name: 'open_review_queue',
-    description: 'Open the review queue in a browser-friendly web page.',
+    description:
+      'Open the review queue in a browser-friendly web page. Defaults to http://127.0.0.1:6677; override with the PORT env var. Falls back to a random free port if 6677 is already in use by something other than Birdie.',
     parameters: emptyParams,
     execute: async () => json(await openReviewQueueHandler(ctxFactory())),
   });

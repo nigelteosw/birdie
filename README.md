@@ -46,7 +46,9 @@ The first MCP use should run the `setup-birdie` prompt, then `complete_setup` wi
 
 ### Starting and stopping the local server
 
-There's nothing to start or stop by hand. The REST+web server that backs the review queue starts itself, lazily, the first time it's needed in a session (whether you ask for it or Birdie offers it) — it binds to `127.0.0.1` on a random free port and stays up for the rest of that session so repeat requests reuse the same URL instead of spawning a new server each time. It has no separate stop command: it goes away on its own when the MCP connection ends (closing the conversation, reloading the plugin, or quitting Claude Code). It is not a background daemon that persists across restarts.
+There's nothing to start or stop by hand. The REST+web server that backs the review queue starts itself, lazily, the first time it's needed in a session (whether you ask for it or Birdie offers it) — it binds to `127.0.0.1` and stays up for the rest of that session so repeat requests reuse the same URL instead of spawning a new server each time. It has no separate stop command: it goes away on its own when the MCP connection ends (closing the conversation, reloading the plugin, or quitting Claude Code). It is not a background daemon that persists across restarts.
+
+By default it binds to a fixed port, `http://127.0.0.1:6677`, so you always know where to find it without asking Birdie. Override it with the `PORT` env var (e.g. set `env: { "PORT": "..." }` on the `birdie` entry in `.claude-plugin/plugin.json`'s `mcpServers`, or export it before running standalone). If two Claude Code windows both start Birdie locally, the second one detects the first is already serving on port 6677 and reuses that URL instead of erroring. If port 6677 is already taken by something unrelated to Birdie, it falls back to a random free port rather than handing back the wrong server's URL.
 
 ### Switching between local and a shared team server
 

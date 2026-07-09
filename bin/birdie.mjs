@@ -65270,8 +65270,12 @@ function parseTypologyCategories(raw) {
 import { existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname as dirname2, join, resolve } from "node:path";
+var DEFAULT_PORT = 6677;
 function birdieDir() {
   return resolve(homedir(), ".birdie");
+}
+function localWebPort() {
+  return Number(process.env.PORT ?? DEFAULT_PORT);
 }
 function configPath() {
   return expandHome(process.env.BIRDIE_CONFIG_PATH ?? join(birdieDir(), "config.json"));
@@ -65813,6 +65817,9 @@ function createServer(ctx) {
   app.get("/domain", (_req, res) => {
     res.json({ typology_categories: ctx.domainProfile.typology_categories });
   });
+  app.get("/__birdie", (_req, res) => {
+    res.json({ birdie: true });
+  });
   const dist = findWebDist();
   if (dist) {
     app.use(import_express3.default.static(dist));
@@ -65995,13 +66002,54 @@ function completeSetup(config2) {
 }
 async function startLocalReviewQueue(ctx) {
   if (runningWebUrl) return { url: runningWebUrl };
-  const requestedPort = Number(process.env.PORT ?? 0);
+  const requestedPort = localWebPort();
   const app = createServer(ctx);
-  await new Promise((resolve3) => {
-    runningWebServer = app.listen(requestedPort, "127.0.0.1", resolve3);
-  });
+  try {
+    await new Promise((resolve3, reject) => {
+      const server = app.listen(requestedPort, "127.0.0.1");
+      server.once("listening", () => {
+        runningWebServer = server;
+        resolve3();
+      });
+      server.once("error", reject);
+    });
+  } catch (err) {
+    if (err.code === "EADDRINUSE") {
+      const candidateUrl = `http://127.0.0.1:${requestedPort}`;
+      if (await isBirdieServer(candidateUrl)) {
+        runningWebUrl = candidateUrl;
+        return { url: runningWebUrl };
+      }
+      return startOnEphemeralPort(app);
+    }
+    throw err;
+  }
   const address = runningWebServer.address();
   const port = typeof address === "object" && address ? address.port : requestedPort;
+  runningWebUrl = `http://127.0.0.1:${port}`;
+  return { url: runningWebUrl };
+}
+async function isBirdieServer(url2) {
+  try {
+    const res = await fetch(`${url2}/__birdie`, { signal: AbortSignal.timeout(500) });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body.birdie === true;
+  } catch {
+    return false;
+  }
+}
+async function startOnEphemeralPort(app) {
+  await new Promise((resolve3, reject) => {
+    const server = app.listen(0, "127.0.0.1");
+    server.once("listening", () => {
+      runningWebServer = server;
+      resolve3();
+    });
+    server.once("error", reject);
+  });
+  const address = runningWebServer.address();
+  const port = typeof address === "object" && address ? address.port : 0;
   runningWebUrl = `http://127.0.0.1:${port}`;
   return { url: runningWebUrl };
 }
@@ -77921,7 +77969,7 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "open_review_queue",
-    description: "Open the review queue in a browser-friendly web page.",
+    description: "Open the review queue in a browser-friendly web page. Defaults to http://127.0.0.1:6677; override with the PORT env var. Falls back to a random free port if 6677 is already in use by something other than Birdie.",
     parameters: emptyParams,
     execute: async () => json(await openReviewQueueHandler(ctxFactory()))
   });
@@ -78027,7 +78075,7 @@ async function main() {
     throw new Error(`Unknown mode '${mode}'. Use 'mcp', 'web', or omit the mode for both.`);
   }
   if (mode === "web" || mode === "both") {
-    const port = Number(process.env.PORT ?? 4e3);
+    const port = localWebPort();
     createServer(buildContext()).listen(port, () => {
       console.error(`Birdie REST API + web UI listening on http://localhost:${port}`);
     });
