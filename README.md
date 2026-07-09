@@ -2,7 +2,7 @@
 
 # Birdie
 
-Birdie captures before/after edits as mentorship examples, lets an MCP-connected assistant extract a candidate lesson, gates promotion on human review, and answers two questions from reviewed lessons: how a senior handled something, and what a junior is struggling with.
+Birdie captures before/after edits as mentorship examples, lets an MCP-connected assistant extract a candidate lesson, and gates promotion on human review. Reviewed lessons become a searchable library of mentorship examples.
 
 Birdie makes no LLM calls. The connected MCP host does the reasoning; Birdie stores, validates, and retrieves the data.
 
@@ -96,11 +96,9 @@ git add bin/birdie.mjs
 - `GET /traces/:id`
 - `POST /traces/:id/skip`
 - `POST /traces/:id/extract`
-- `GET /lessons`
+- `GET /lessons` — accepts `status`, `typology`, `playbook_ref`, `submitted_by`, and `q` (keyword search across quote/what_changed/why_it_matters) query params
 - `GET /lessons/:id`
 - `PATCH /lessons/:id`
 - `POST /lessons/:id/promote`
-- `GET /lessons/ask/senior-approach`
-- `GET /lessons/ask/junior-struggles`
 - `GET /domain`
 - `GET /__birdie` — identity marker used to detect an existing Birdie instance before reusing its port
