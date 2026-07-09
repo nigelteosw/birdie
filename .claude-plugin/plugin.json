@@ -1,0 +1,12 @@
+{
+  "name": "birdie",
+  "version": "0.1.0",
+  "description": "Local-first mentorship capture for reviewed before/after edit lessons.",
+  "mcpServers": {
+    "birdie": {
+      "command": "bun",
+      "args": ["backend/src/cli.ts", "mcp"]
+    }
+  },
+  "skills": ["skills/birdie-mentor"]
+}

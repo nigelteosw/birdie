@@ -1,0 +1,77 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import type { BirdieConfig } from './types.js';
+
+export interface ConfigState {
+  firstRun: boolean;
+  configPath: string;
+  birdieDir: string;
+  dbPath: string;
+  domainPath: string;
+  config?: BirdieConfig;
+}
+
+export function birdieDir(): string {
+  return resolve(homedir(), '.birdie');
+}
+
+export function configPath(): string {
+  return expandHome(process.env.BIRDIE_CONFIG_PATH ?? join(birdieDir(), 'config.json'));
+}
+
+export function localDbPath(): string {
+  return expandHome(process.env.DB_PATH ?? join(birdieDir(), 'birdie.db'));
+}
+
+export function domainProfilePath(): string {
+  return expandHome(process.env.DOMAIN_PROFILE_PATH ?? join(birdieDir(), 'domain.md'));
+}
+
+export function readConfigState(): ConfigState {
+  const path = configPath();
+  const dir = dirname(path);
+  const state = {
+    firstRun: true,
+    configPath: path,
+    birdieDir: dir,
+    dbPath: localDbPath(),
+    domainPath: domainProfilePath(),
+  };
+  if (!existsSync(path)) return state;
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as BirdieConfig;
+    if (parsed.mode === 'local' || (parsed.mode === 'remote' && typeof parsed.server_url === 'string')) {
+      return { ...state, firstRun: false, config: parsed };
+    }
+  } catch {
+    return state;
+  }
+  return state;
+}
+
+export function writeConfig(config: BirdieConfig): BirdieConfig {
+  const path = configPath();
+  mkdirSync(dirname(path), { recursive: true });
+  const normalized =
+    config.mode === 'remote'
+      ? { mode: 'remote' as const, server_url: config.server_url.replace(/\/+$/, '') }
+      : { mode: 'local' as const };
+  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`);
+  if (normalized.mode === 'local') {
+    mkdirSync(dirname(localDbPath()), { recursive: true });
+  }
+  return normalized;
+}
+
+export function saveDomainProfile(content: string): { path: string } {
+  const path = domainProfilePath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content.endsWith('\n') ? content : `${content}\n`);
+  return { path };
+}
+
+function expandHome(path: string): string {
+  return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path;
+}
