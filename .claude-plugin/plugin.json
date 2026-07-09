@@ -11,6 +11,5 @@
         "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
       }
     }
-  },
-  "skills": ["skills/birdie-mentor"]
+  }
 }
