@@ -17,6 +17,13 @@ for entry in "${targets[@]}"; do
   bun build --compile --minify --target="${target}" backend/src/cli.ts \
     --external @valibot/to-json-schema --external effect \
     --outfile "bin/${name}"
+  if [[ "${target}" == bun-darwin-* ]] && command -v codesign >/dev/null; then
+    # bun --compile invalidates the base runtime's ad-hoc signature; without
+    # re-signing, macOS reports "invalid signature (code or signature have
+    # been modified)" and can refuse to exec the binary in stricter spawn
+    # contexts even though it runs fine from an interactive shell.
+    codesign --force -s - "bin/${name}"
+  fi
   gzip -9 -f "bin/${name}"
 done
 
