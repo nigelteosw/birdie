@@ -32,7 +32,7 @@ This is a post-hackathon scaffold. The goal is a working end-to-end loop, not a 
 - Require a senior to **review and confirm** (or edit, or reject) every AI guess before it becomes a lesson.
 - Split promoted lessons by audience: **juniors can ask how a senior (or seniors in general) handled a similar issue**; **seniors can ask what a specific junior (or juniors in general) are struggling with**. Only promoted (reviewed) lessons feed either query — review is mandatory for both audiences, not a single undifferentiated "shared library."
 - Support **bring-your-own-model** natively, not via provider config: Birdie is an MCP server with zero LLM API calls and zero model credentials. Whatever model is already running the connected client does the reasoning when it calls Birdie's tools. Swapping models means swapping which MCP host you're using, not reconfiguring Birdie.
-- **Zero-terminal setup**: installing Birdie is `/plugin install birdie` in Claude Code — no `npm install`, no `.env` file, no hand-edited MCP config JSON (§4.1). A first-run conversation, not a README, is how a new user gets configured (§4.2).
+- **Zero-terminal setup**: installing Birdie is `/plugin install birdie` in Claude Code — no `bun install`, no `.env` file, no hand-edited MCP config JSON (§4.1). A first-run conversation, not a README, is how a new user gets configured (§4.2).
 - **Local-by-default, with an opt-in shared-server path**: a single person runs Birdie against a SQLite file on their own machine with no setup beyond installing the plugin. A team that already has someone running a shared Birdie server can instead point their plugin at that server's URL during first-run setup, and every MCP tool call transparently talks to it instead (§4.1, §4.3). Storage sits behind a small repository interface so both cases — and a later Postgres-backed backend — are different implementations of that interface, not a rewrite (§4.3).
 - Let the user choose how to run it at startup — MCP server only, web UI only, or both — rather than forcing one shape (§4.1), but make the web UI something Birdie opens on request (§4.4), not a separate thing to remember to start.
 - Keep "data" and "judgment" as two separate, independently-inspectable layers: MCP **tools** hold no opinions (§8.2), MCP **prompts** hold the taxonomy/methodology and work with any host (§9.1), and a Claude Code **Skill** is a thin wrapper over both, bundled into the same plugin install — not a third place logic can drift into, and not a separate install step either.
@@ -75,11 +75,11 @@ Promote ──► queryable by two audiences over the same reviewed pool:
       └─ `ask_junior_struggles`  (senior-facing, optional junior_name filter)
 ```
 
-Single Node/TypeScript codebase. Storage is local SQLite (`better-sqlite3`) or a thin HTTP client against a shared server, both behind the same small repository interface (`TraceRepository`, `LessonRepository`) — see §4.3. No message queue, no background workers — everything is synchronous request/response.
+Single Bun/TypeScript codebase. Storage is local SQLite (`bun:sqlite`) or a thin HTTP client against a shared server, both behind the same small repository interface (`TraceRepository`, `LessonRepository`) — see §4.3. No message queue, no background workers — everything is synchronous request/response.
 
 ### 4.1 Distribution: the Claude Code plugin
 
-Primary distribution is a **Claude Code plugin**: a `.claude-plugin/plugin.json` manifest bundling (a) the MCP server, declared so Claude Code launches it automatically — no hand-edited `claude_desktop_config.json` or MCP settings — (b) the `birdie-mentor` Skill (§9.1), and (c) the default `domain.md`. Installing is `/plugin install birdie` (or a marketplace click); that is the entire setup step for a Claude Code user. No `npm install`, no `.env` file, no JSON config editing is part of this path.
+Primary distribution is a **Claude Code plugin**: a `.claude-plugin/plugin.json` manifest bundling (a) the MCP server, declared so Claude Code launches it automatically — no hand-edited `claude_desktop_config.json` or MCP settings — (b) the `birdie-mentor` Skill (§9.1), and (c) the default `domain.md`. Installing is `/plugin install birdie` (or a marketplace click); that is the entire setup step for a Claude Code user. No `bun install`, no `.env` file, no JSON config editing is part of this path.
 
 Underneath, the MCP server is the same stdio server described in §9, invoked via the same CLI entrypoint (`birdie mcp`) — the plugin manifest is just what points Claude Code at that command automatically. A Claude Desktop or Codex CLI user who wants the same server registers that CLI command manually in their host's config, same as any other MCP server; this remains available but is now the advanced/secondary path, not the documented default. `birdie web` (REST + web UI standalone) is likewise still a valid manual command for development, superseded for normal use by the on-request launch in §4.4.
 
@@ -106,21 +106,21 @@ This branching only affects the **MCP tool layer** — the REST API and web UI (
 
 `TraceService` and `LessonService` (§5) are the seam. Because those classes hold private fields, TypeScript would otherwise require an exact class match; two small public-methods-only interfaces (`TraceServiceLike`, `LessonServiceLike` in `types.ts`, covering `capture`/`get`/`list`/`skip`/`extract` and `list`/`get`/`review`/`promote`/`askSeniorApproach`/`askJuniorStruggles` respectively) are what the MCP tool layer's `ToolContext` is actually typed against, so any class with the right public shape can stand in — the local classes and their remote counterparts alike. Selected once at MCP-server startup by reading `config.json`:
 
-- **`local` mode** — the existing `TraceService` / `LessonService` (§5) backed by `TraceRepository` / `LessonRepository` over `better-sqlite3`. Unchanged from the original local-only design.
+- **`local` mode** — the existing `TraceService` / `LessonService` (§5) backed by `TraceRepository` / `LessonRepository` over `bun:sqlite`. Unchanged from the original local-only design.
 - **`remote` mode** — `RemoteTraceService` / `RemoteLessonService`, thin HTTP clients whose methods call the REST endpoints in §8.1, including the remote-sync routes, against `config.json`'s `server_url`. Each method is a single HTTP call; there's no local repository or SQLite file involved on this side at all.
 
 A dedicated MCP-only context builder (`mcpContext.ts`) picks whichever pair matches; the MCP tool handlers, and the prompts that call them, are unaware of which one is active — same code either way. This reuses the same-shaped-service seam the original design already reserved for a future Postgres backend (§3), applied here to "local file vs. shared server" instead. A shared Birdie server is not a special build: it's an ordinary Birdie instance running in `local` mode with its REST API reachable on the network, started the same way as anyone else's — "shared" describes how a client points at it, not a different server artifact.
 
 If `server_url` is unreachable, MCP tool calls fail with a clear message surfaced to the assistant ("Can't reach the Birdie server at `<url>` — check the URL or ask whoever set it up") rather than a raw network error (§11).
 
-### 4.4 Web UI: one page, two parts, opened on request
+### 4.4 Web UI: one page, two parts, surfaced proactively
 
 The web UI is a single page, not a multi-screen app — no routing, no tabs. Two parts stacked on one screen:
 
 1. **Capture** — a compact form at the top: before/after text, submitted-by name/role, junior/senior names, optional playbook ref/text. Submitting posts to `POST /traces` and clears the form.
 2. **Review** — everything below it: the list of `pending_review` lessons, each rendered as the lesson card (§7.1) with editable fields, a category field, a playbook-divergence banner when it applies, and Confirm & Promote / Reject actions.
 
-Chat (via the Skill + MCP tools) is the primary way to capture and review — conversational, matching how the target user already works with an AI assistant. The web UI is secondary, for the moments a chat turn doesn't fit well: skimming a whole queue at a glance, or a reviewer who'd rather click through several lessons in a row. Nothing runs the web server in the background by default — a chat request like "open the review queue" calls the `open_review_queue` tool (§8.2), which starts the local REST+web server (in `local` mode) or resolves to the shared server's own already-running web UI (in `remote` mode) and hands the URL back to the assistant to relay. In local mode the server keeps running for the rest of the session; it is not a standing daemon that survives a restart.
+Chat (via the Skill + MCP tools) is the primary way to capture and review — conversational, matching how the target user already works with an AI assistant. The web UI is secondary, for the moments a chat turn doesn't fit well: skimming a whole queue at a glance, or a reviewer who'd rather click through several lessons in a row. Nothing runs the web server in the background by default. Rather than waiting to be asked, Birdie surfaces it on its own: whenever a tool call leaves one or more lessons in `pending_review` — after `save_extraction`, or after `list_lessons` / `review_lesson` surfaces pending items — the assistant calls `open_review_queue` (§8.2) itself, with no confirmation step, and appends the returned URL to its reply (e.g. "2 lessons are pending review. Queue: http://127.0.0.1:4317"). The user can still ask for the link explicitly at any time; the proactive case just removes the need to. `open_review_queue` starts the local REST+web server (in `local` mode) or resolves to the shared server's own already-running web UI (in `remote` mode). In local mode the server keeps running for the rest of the session; it is not a standing daemon that survives a restart.
 
 There is no separate browsable "Library" screen in v1. Promoted lessons are queryable — via `GET /lessons?status=promoted` over REST, or the `ask_*` MCP tools in chat (§7.4) — but the web UI itself only shows what still needs a decision.
 
@@ -141,7 +141,7 @@ birdie/
 │  │  │  ├─ server.ts         fastmcp server entrypoint (stdio transport)
 │  │  │  ├─ tools.ts          tool definitions — data layer (§8.2), incl. complete_setup, open_review_queue
 │  │  │  └─ prompts.ts        prompt templates — judgment layer (§8.3, §9.1), incl. setup-birdie
-│  │  ├─ db.ts                better-sqlite3 connection + schema migration
+│  │  ├─ db.ts                bun:sqlite connection + schema migration
 │  │  ├─ repositories/
 │  │  │  ├─ traceRepository.ts        SqliteTraceRepository, local mode only (§4.3)
 │  │  │  └─ lessonRepository.ts       SqliteLessonRepository, local mode only (§4.3)
@@ -174,7 +174,7 @@ birdie/
 ├─ domain.md                    default domain profile (§6.1) — ships with a legal example; a customized copy lives at ~/.birdie/domain.md once a user runs the setup interview
 ├─ docs/
 │  └─ superpowers/specs/
-├─ package.json                npm workspaces root (dev script runs REST+web; separate script runs the MCP server)
+├─ package.json                Bun workspaces root (dev script runs REST+web; separate script runs the MCP server)
 └─ README.md
 ```
 
@@ -482,7 +482,7 @@ No end-to-end or UI test suite in v1; manual verification of the plugin install 
 
 ## 13. Build Order
 
-1. Repo scaffold — npm workspaces root, `backend/` and `web/` packages, TypeScript config, SQLite schema + migration, repository interfaces (`TraceRepository`, `LessonRepository`) with their `Sqlite*` implementations, and the `birdie` CLI entrypoint (`mcp` / `web` / default-both subcommands, §4.1).
+1. Repo scaffold — Bun workspaces root, `backend/` and `web/` packages, TypeScript config, SQLite schema + migration, repository interfaces (`TraceRepository`, `LessonRepository`) with their `Sqlite*` implementations, and the `birdie` CLI entrypoint (`mcp` / `web` / default-both subcommands, §4.1).
 2. Core service layer — trace/lesson CRUD and quote verification over the repository interfaces (no transport yet).
 3. MCP server (`fastmcp`) — `capture_trace`, `get_trace`, `skip_extraction`, `save_extraction`, `list_lessons`, `review_lesson`, `promote_lesson` tools, wired to the core service. This is the demo-critical path: capture → extract-by-chat → review-by-chat → promote.
 4. `ask_senior_approach` + `ask_junior_struggles` MCP tools.

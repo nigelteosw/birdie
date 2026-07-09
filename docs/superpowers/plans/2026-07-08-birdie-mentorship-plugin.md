@@ -4,14 +4,14 @@
 
 **Goal:** Build Birdie — an MCP server (plus a minimal REST API and one-page web UI) distributed as a Claude Code plugin, that captures before/after mentorship examples, lets an MCP-connected AI assistant extract lessons from them, gates promotion on human review, and serves two audiences (junior asking how a senior handled something, senior asking what a junior is struggling with) over the same reviewed pool — with zero-terminal setup and plain-language chat for the non-technical people who actually use it day to day.
 
-**Architecture:** A single TypeScript/Node backend package with a repository layer over SQLite (`better-sqlite3`), a thin service layer enforcing the business rules (quote verification, domain-profile-validated typology, promotion gating), and two transports sharing that service layer: an MCP server (`fastmcp`, tools + prompts) and a REST API (`express`) backing a one-page React web UI. The REST/web path is always local-SQLite-backed; only the MCP tool layer branches between a local (SQLite, in-process) and remote (HTTP client against someone else's already-running Birdie server) implementation, selected via `~/.birdie/config.json`, written through a guided first-run chat conversation rather than hand-edited. No LLM provider code anywhere — reasoning happens in whichever model is running the connected MCP host. Primary distribution is a Claude Code plugin (`.claude-plugin/plugin.json`) bundling the MCP server and the `birdie-mentor` Skill; manual MCP registration (Claude Desktop, Codex CLI, local dev) remains a secondary/advanced path using the same underlying `birdie` CLI.
+**Architecture:** A single TypeScript/Bun backend package with a repository layer over SQLite (`bun:sqlite`), a thin service layer enforcing the business rules (quote verification, domain-profile-validated typology, promotion gating), and two transports sharing that service layer: an MCP server (`fastmcp`, tools + prompts) and a REST API (`express`) backing a one-page React web UI. The REST/web path is always local-SQLite-backed; only the MCP tool layer branches between a local (SQLite, in-process) and remote (HTTP client against someone else's already-running Birdie server) implementation, selected via `~/.birdie/config.json`, written through a guided first-run chat conversation rather than hand-edited. No LLM provider code anywhere — reasoning happens in whichever model is running the connected MCP host. Primary distribution is a Claude Code plugin (`.claude-plugin/plugin.json`) bundling the MCP server and the `birdie-mentor` Skill; manual MCP registration (Claude Desktop, Codex CLI, local dev) remains a secondary/advanced path using the same underlying `birdie` CLI.
 
-**Tech Stack:** TypeScript, Node.js, npm workspaces, `better-sqlite3`, `express`, `fastmcp`, `zod`, `vitest` + `supertest`, React + Vite for the web UI.
+**Tech Stack:** TypeScript, Bun workspaces/runtime/test runner, `bun:sqlite`, `express`, `fastmcp`, `zod`, React + Vite for the web UI.
 
 ## Global Constraints
 
 - **Local-by-default, opt-in shared server**: a solo user gets a working single SQLite file with zero setup beyond installing the plugin; a team can instead point the plugin at an existing shared Birdie server's URL during first-run setup. No auth, no multi-tenant — a shared server is a trusted-network assumption, not a hosted multi-user service Birdie builds tooling for.
-- **Zero-terminal setup**: nothing in the primary (Claude Code plugin) path requires `npm install`, editing a `.env` file, or hand-editing MCP config JSON or `~/.birdie/config.json`. Setup is a guided chat conversation (`setup-birdie` MCP prompt) that calls `complete_setup` / `save_domain_profile` on the user's behalf.
+- **Zero-terminal setup**: nothing in the primary (Claude Code plugin) path requires `bun install`, editing a `.env` file, or hand-editing MCP config JSON or `~/.birdie/config.json`. Setup is a guided chat conversation (`setup-birdie` MCP prompt) that calls `complete_setup` / `save_domain_profile` on the user's behalf.
 - **Plain language for non-technical users**: every user-visible surface (tool descriptions, the web UI, the Skill's phrasing) uses the vocabulary in `backend/src/copy.ts` / `web/src/copy.ts` (e.g. "example" not "trace", "category" not "typology") — internal type/column/parameter names stay precise and technical, but nothing a user reads should require knowing them.
 - Birdie makes **zero LLM API calls** and holds no model credentials — all reasoning (extraction, ask synthesis, setup conversation) happens in the connected MCP host's model via tool calls.
 - **Quote verification is done in code**, never delegated to the model — `quote` must be a verbatim substring of `before_text`.
@@ -43,11 +43,12 @@
   "name": "birdie",
   "private": true,
   "workspaces": ["backend", "web"],
+  "packageManager": "bun@1.3.11",
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspace backend",
-    "dev:backend": "npm run dev --workspace backend",
-    "dev:web": "npm run dev --workspace web"
+    "build": "bun run --cwd backend build && bun run --cwd web build",
+    "test": "bun run --cwd backend test",
+    "dev:backend": "bun run --cwd backend dev",
+    "dev:web": "bun run --cwd web dev"
   }
 }
 ```
@@ -74,25 +75,20 @@ data/
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/cli.ts",
-    "test": "vitest run"
+    "dev": "bun src/cli.ts",
+    "test": "bun test"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "fastmcp": "^1.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
+    "@types/bun": "^1.2.0",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.0",
-    "@types/supertest": "^6.0.2",
-    "supertest": "^7.0.0",
-    "tsx": "^4.16.2",
-    "typescript": "^5.5.4",
-    "vitest": "^2.0.5"
+    "typescript": "^5.5.4"
   }
 }
 ```
@@ -165,9 +161,6 @@ export interface NewTrace {
 export interface Lesson {
   id: string;
   trace_id: string;
-  junior_name: string | null;
-  senior_name: string | null;
-  playbook_ref: string | null;
   quote: string;
   quote_verified: boolean;
   what_changed: string;
@@ -245,17 +238,17 @@ export interface LessonServiceLike {
 
 - [ ] **Step 7: Install dependencies and verify the build**
 
-Run: `npm install` (from repo root)
-Expected: installs succeed for the root and `backend` workspaces (the `web` workspace doesn't exist yet, so npm will just skip it).
+Run: `bun install` (from repo root)
+Expected: installs succeed for the root and `backend` workspaces (the `web` workspace doesn't exist yet, so Bun will just skip it).
 
-Run: `npm run build --workspace backend`
+Run: `bun run --cwd backend build`
 Expected: `tsc` compiles `backend/src/types.ts` to `backend/dist/types.js` with no errors.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add package.json .gitignore backend/package.json backend/tsconfig.json backend/.env.example backend/src/types.ts package-lock.json
-git commit -m "Scaffold npm workspaces and backend domain types"
+git add package.json .gitignore backend/package.json backend/tsconfig.json backend/.env.example backend/src/types.ts bun.lock
+git commit -m "Scaffold Bun workspaces and backend domain types"
 ```
 
 ---
@@ -270,24 +263,28 @@ git commit -m "Scaffold npm workspaces and backend domain types"
 
 **Interfaces:**
 - Consumes: `Trace`, `NewTrace`, `TraceStatus`, `Lesson`, `LessonWithTrace`, `NewExtraction`, `LessonEdit`, `LessonFilters`, `PromotePayload` from `backend/src/types.ts` (Task 1).
-- Produces: `openDb(dbPath: string): Database.Database`; `class TraceRepository` with `create(input: NewTrace): Trace`, `getById(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `markExtracted(id: string): void`, `markSkipped(id: string, reason: string): void`; `class LessonRepository` with `create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace`, `getById(id: string): LessonWithTrace | undefined`, `getByTraceId(traceId: string): LessonWithTrace | undefined`, `list(filters: LessonFilters): LessonWithTrace[]`, `edit(id: string, changes: LessonEdit): LessonWithTrace`, `promote(id: string, payload: PromotePayload): LessonWithTrace`. Both repositories take a `Database.Database` instance in their constructor.
+- Produces: `openDb(dbPath: string): Database`; `class TraceRepository` with `create(input: NewTrace): Trace`, `getById(id: string): Trace | undefined`, `list(status?: TraceStatus): Trace[]`, `markExtracted(id: string): void`, `markSkipped(id: string, reason: string): void`; `class LessonRepository` with `create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace`, `getById(id: string): LessonWithTrace | undefined`, `getByTraceId(traceId: string): LessonWithTrace | undefined`, `list(filters: LessonFilters): LessonWithTrace[]`, `edit(id: string, changes: LessonEdit): LessonWithTrace`, `promote(id: string, payload: PromotePayload): LessonWithTrace`. Both repositories take a `Database` instance in their constructor.
 
 - [ ] **Step 1: Create `backend/src/db.ts`**
 
 ```typescript
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export function openDb(dbPath: string): Database.Database {
-  mkdirSync(dirname(dbPath), { recursive: true });
+export function openDb(dbPath: string): Database {
+  if (dbPath !== ':memory:') {
+    mkdirSync(dirname(dbPath), { recursive: true });
+  }
   const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  if (dbPath !== ':memory:') {
+    db.exec('PRAGMA journal_mode = WAL;');
+  }
   migrate(db);
   return db;
 }
 
-function migrate(db: Database.Database): void {
+function migrate(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
@@ -334,14 +331,14 @@ function migrate(db: Database.Database): void {
 Create `backend/test/repositories.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import type Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach } from 'bun:test';
+import type { Database } from 'bun:sqlite';
 import { openDb } from '../src/db.js';
 import { TraceRepository } from '../src/repositories/traceRepository.js';
 import { LessonRepository } from '../src/repositories/lessonRepository.js';
 
 describe('TraceRepository', () => {
-  let db: Database.Database;
+  let db: Database;
   let traces: TraceRepository;
 
   beforeEach(() => {
@@ -379,7 +376,7 @@ describe('TraceRepository', () => {
 });
 
 describe('LessonRepository', () => {
-  let db: Database.Database;
+  let db: Database;
   let traces: TraceRepository;
   let lessons: LessonRepository;
   let traceId: string;
@@ -497,18 +494,18 @@ describe('LessonRepository', () => {
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: FAIL — `Cannot find module '../src/repositories/traceRepository.js'` (the repository files don't exist yet).
 
 - [ ] **Step 4: Create `backend/src/repositories/traceRepository.ts`**
 
 ```typescript
-import type Database from 'better-sqlite3';
+import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 import type { NewTrace, Trace, TraceStatus } from '../types.js';
 
 export class TraceRepository {
-  constructor(private db: Database.Database) {}
+  constructor(private db: Database) {}
 
   create(input: NewTrace): Trace {
     const id = randomUUID();
@@ -557,7 +554,7 @@ export class TraceRepository {
 - [ ] **Step 5: Create `backend/src/repositories/lessonRepository.ts`**
 
 ```typescript
-import type Database from 'better-sqlite3';
+import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 import type { LessonWithTrace, LessonEdit, LessonFilters, NewExtraction, PromotePayload } from '../types.js';
 
@@ -570,7 +567,7 @@ function rowToLesson(row: LessonRow): LessonWithTrace {
 }
 
 export class LessonRepository {
-  constructor(private db: Database.Database) {}
+  constructor(private db: Database) {}
 
   create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace {
     const id = randomUUID();
@@ -712,7 +709,7 @@ export class LessonRepository {
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (11 tests passed: 3 in `TraceRepository`, 8 in `LessonRepository`).
 
 - [ ] **Step 7: Commit**
@@ -738,7 +735,7 @@ git commit -m "Add SQLite schema and trace/lesson repositories"
 Create `backend/test/extraction.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { verifyQuote } from '../src/extraction.js';
 
 describe('verifyQuote', () => {
@@ -762,7 +759,7 @@ describe('verifyQuote', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `npm run test --workspace backend -- extraction`
+Run: `bun run --cwd backend test extraction`
 Expected: FAIL — `Cannot find module '../src/extraction.js'`.
 
 - [ ] **Step 3: Create `backend/src/extraction.ts`**
@@ -775,7 +772,7 @@ export function verifyQuote(quote: string, beforeText: string): boolean {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `npm run test --workspace backend -- extraction`
+Run: `bun run --cwd backend test extraction`
 Expected: PASS (4 tests passed).
 
 - [ ] **Step 5: Commit**
@@ -802,7 +799,7 @@ git commit -m "Add code-side quote verification"
 Create `backend/test/domain.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -840,7 +837,7 @@ describe('loadDomainProfile', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- domain`
+Run: `bun run --cwd backend test domain`
 Expected: FAIL — `Cannot find module '../src/domain.js'`.
 
 - [ ] **Step 3: Create `backend/src/domain.ts`**
@@ -917,7 +914,7 @@ identifiable reasoning behind them.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- domain`
+Run: `bun run --cwd backend test domain`
 Expected: PASS (4 tests passed).
 
 - [ ] **Step 6: Commit**
@@ -945,8 +942,8 @@ git commit -m "Add domain profile loader with legal example default"
 Create `backend/test/services.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import type Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach } from 'bun:test';
+import type { Database } from 'bun:sqlite';
 import { openDb } from '../src/db.js';
 import { TraceRepository } from '../src/repositories/traceRepository.js';
 import { LessonRepository } from '../src/repositories/lessonRepository.js';
@@ -955,7 +952,7 @@ import { LessonService } from '../src/services/lessonService.js';
 import { loadDomainProfile } from '../src/domain.js';
 
 describe('TraceService + LessonService', () => {
-  let db: Database.Database;
+  let db: Database;
   let traceService: TraceService;
   let lessonService: LessonService;
 
@@ -1085,7 +1082,7 @@ describe('TraceService + LessonService', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- services`
+Run: `bun run --cwd backend test services`
 Expected: FAIL — `Cannot find module '../src/services/traceService.js'`.
 
 - [ ] **Step 3: Create `backend/src/services/traceService.ts`**
@@ -1186,7 +1183,7 @@ export class LessonService {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- services`
+Run: `bun run --cwd backend test services`
 Expected: PASS (7 tests passed).
 
 - [ ] **Step 6: Commit**
@@ -1273,8 +1270,8 @@ export function toToolContext(ctx: AppContext): ToolContext {
 Create `backend/test/tools.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import type Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach } from 'bun:test';
+import type { Database } from 'bun:sqlite';
 import { openDb } from '../src/db.js';
 import { TraceRepository } from '../src/repositories/traceRepository.js';
 import { LessonRepository } from '../src/repositories/lessonRepository.js';
@@ -1292,7 +1289,7 @@ import {
 } from '../src/mcp/tools.js';
 
 describe('MCP tool handlers', () => {
-  let db: Database.Database;
+  let db: Database;
   let ctx: ToolContext;
 
   beforeEach(() => {
@@ -1354,7 +1351,7 @@ describe('MCP tool handlers', () => {
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- tools`
+Run: `bun run --cwd backend test tools`
 Expected: FAIL — `Cannot find module '../src/mcp/tools.js'`.
 
 - [ ] **Step 4: Create `backend/src/mcp/tools.ts`**
@@ -1519,7 +1516,7 @@ export function createMcpServer(ctx: ToolContext, domainProfile: DomainProfile):
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- tools`
+Run: `bun run --cwd backend test tools`
 Expected: PASS (3 tests passed).
 
 - [ ] **Step 7: Commit**
@@ -1548,8 +1545,8 @@ git commit -m "Add MCP server with data-layer tools (capture/get/skip/save/list/
 Create `backend/test/ask.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import type Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach } from 'bun:test';
+import type { Database } from 'bun:sqlite';
 import { openDb } from '../src/db.js';
 import { TraceRepository } from '../src/repositories/traceRepository.js';
 import { LessonRepository } from '../src/repositories/lessonRepository.js';
@@ -1558,7 +1555,7 @@ import { LessonService } from '../src/services/lessonService.js';
 import { loadDomainProfile } from '../src/domain.js';
 
 describe('ask_senior_approach / ask_junior_struggles', () => {
-  let db: Database.Database;
+  let db: Database;
   let traceService: TraceService;
   let lessonService: LessonService;
 
@@ -1633,7 +1630,7 @@ describe('ask_senior_approach / ask_junior_struggles', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- ask`
+Run: `bun run --cwd backend test ask`
 Expected: FAIL — `lessonService.askSeniorApproach is not a function`.
 
 - [ ] **Step 3: Add `searchPromoted` and `strugglesFor` to `backend/src/repositories/lessonRepository.ts`**
@@ -1710,7 +1707,7 @@ Add these two methods inside the `LessonService` class, after `promote`:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- ask`
+Run: `bun run --cwd backend test ask`
 Expected: PASS (5 tests passed).
 
 - [ ] **Step 6: Add the two MCP tools to `backend/src/mcp/tools.ts`**
@@ -1759,7 +1756,7 @@ Add these two registrations inside `registerTools`, after the `promote_lesson` t
 
 - [ ] **Step 7: Run the full backend test suite to verify nothing broke**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 8: Commit**
@@ -1787,7 +1784,7 @@ git commit -m "Add ask_senior_approach and ask_junior_struggles MCP tools"
 Create `backend/test/prompts.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { buildExtractLessonPrompt, buildAskSeniorApproachPrompt, buildAskJuniorStrugglesPrompt } from '../src/mcp/prompts.js';
 import { loadDomainProfile } from '../src/domain.js';
 
@@ -1816,7 +1813,7 @@ describe('MCP prompt builders', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- prompts`
+Run: `bun run --cwd backend test prompts`
 Expected: FAIL — `Cannot find module '../src/mcp/prompts.js'`.
 
 - [ ] **Step 3: Create `backend/src/mcp/prompts.ts`**
@@ -1890,7 +1887,7 @@ export function registerPrompts(server: FastMCP, profile: DomainProfile): void {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- prompts`
+Run: `bun run --cwd backend test prompts`
 Expected: PASS (3 tests passed).
 
 - [ ] **Step 5: Wire prompts into the MCP server**
@@ -1913,7 +1910,7 @@ export function createMcpServer(ctx: ToolContext, domainProfile: DomainProfile):
 
 - [ ] **Step 6: Run the full backend test suite**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 7: Commit**
@@ -1942,7 +1939,7 @@ git commit -m "Add MCP prompts: extract-lesson, ask-senior-approach, ask-junior-
 Create `backend/test/routes.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import request from 'supertest';
 import type { Express } from 'express';
 import { openDb } from '../src/db.js';
@@ -2029,7 +2026,7 @@ describe('REST API', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- routes`
+Run: `bun run --cwd backend test routes`
 Expected: FAIL — `Cannot find module '../src/server.js'`.
 
 - [ ] **Step 3: Create `backend/src/routes/traces.ts`**
@@ -2218,12 +2215,12 @@ function findWebDist(): string | undefined {
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- routes`
+Run: `bun run --cwd backend test routes`
 Expected: PASS (5 tests passed).
 
 - [ ] **Step 7: Run the full backend test suite**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files, backend done). These route tests do not require `web/dist`; static web serving is covered by the Task 11 smoke check after the web bundle exists.
 
 - [ ] **Step 8: Commit**
@@ -2279,7 +2276,7 @@ This `mcp` mode using `buildContext()` directly (always local, ignoring `~/.bird
 
 - [ ] **Step 2: Verify the `web` mode starts and serves requests**
 
-Run: `cd backend && DB_PATH=:memory: PORT=4001 npx tsx src/cli.ts web`
+Run: `cd backend && DB_PATH=:memory: PORT=4001 bun src/cli.ts web`
 Expected: prints `Birdie REST API + web UI listening on http://localhost:4001` and keeps running. At this point the REST API is available; the static web UI is served by the same process once Task 11 has created `web/dist`.
 
 In a second terminal, run:
@@ -2294,7 +2291,7 @@ Expected: a JSON response with `"status":"captured"` and a generated `id`. Stop 
 
 - [ ] **Step 3: Verify the `mcp` mode starts without crashing**
 
-Run: `cd backend && DB_PATH=:memory: npx tsx src/cli.ts mcp`
+Run: `cd backend && DB_PATH=:memory: bun src/cli.ts mcp`
 Expected: the process starts and waits on stdio without throwing (no visible output is normal for a stdio MCP server with nothing connected). Stop it with Ctrl+C.
 
 - [ ] **Step 4: Commit**
@@ -2436,6 +2433,9 @@ export interface Trace {
 export interface Lesson {
   id: string;
   trace_id: string;
+  junior_name: string | null;
+  senior_name: string | null;
+  playbook_ref: string | null;
   quote: string;
   quote_verified: boolean;
   what_changed: string;
@@ -2445,6 +2445,8 @@ export interface Lesson {
   playbook_note: string | null;
   status: 'pending_review' | 'rejected' | 'promoted';
   reviewer: string | null;
+  reviewed_at: string | null;
+  promoted_at: string | null;
   created_at: string;
 }
 
@@ -2731,15 +2733,15 @@ export default function App() {
 
 - [ ] **Step 10: Install web dependencies and verify the build**
 
-Run: `npm install` (from repo root — picks up the new `web` workspace)
+Run: `bun install` (from repo root — picks up the new `web` workspace)
 Expected: installs succeed for the `web` workspace.
 
-Run: `npm run build --workspace web`
+Run: `bun run --cwd web build`
 Expected: `tsc -b && vite build` completes with no type errors, producing `web/dist/`.
 
 - [ ] **Step 11: Manual smoke check**
 
-Run: `npm run build --workspace web`, then run `cd backend && DB_PATH=./data/birdie.db PORT=4000 npx tsx src/cli.ts web`. Open `http://localhost:4000` in a browser, submit a trace via the Capture form, and confirm no console errors. Also run `npm run dev --workspace web` if you want Vite hot reload during iteration; it should proxy API calls to `:4000`. (The Review queue will show nothing until a lesson is extracted via an MCP-connected assistant, which requires registering the MCP server with a host — that's expected at this point.)
+Run: `bun run --cwd web build`, then run `cd backend && DB_PATH=./data/birdie.db PORT=4000 bun src/cli.ts web`. Open `http://localhost:4000` in a browser, submit a trace via the Capture form, and confirm no console errors. Also run `bun run --cwd web dev` if you want Vite hot reload during iteration; it should proxy API calls to `:4000`. (The Review queue will show nothing until a lesson is extracted via an MCP-connected assistant, which requires registering the MCP server with a host — that's expected at this point.)
 
 - [ ] **Step 12: Commit**
 
@@ -2764,7 +2766,7 @@ git commit -m "Add one-page web UI: capture form + review queue"
 Create `backend/test/config.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2828,7 +2830,7 @@ describe('config', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- config`
+Run: `bun run --cwd backend test config`
 Expected: FAIL — `Cannot find module '../src/config.js'`.
 
 - [ ] **Step 3: Create `backend/src/config.ts`**
@@ -2877,7 +2879,7 @@ export function resolveDbPath(): string {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- config`
+Run: `bun run --cwd backend test config`
 Expected: PASS (7 tests passed).
 
 - [ ] **Step 5: Commit**
@@ -2905,7 +2907,7 @@ git commit -m "Add config module for first-run detection (~/.birdie/config.json)
 Create `backend/test/setup.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2943,7 +2945,7 @@ describe('completeSetupHandler', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- setup`
+Run: `bun run --cwd backend test setup`
 Expected: FAIL — `completeSetupHandler is not a function` (not exported yet).
 
 - [ ] **Step 3: Modify `backend/src/context.ts`**
@@ -2979,8 +2981,9 @@ export const completeSetupParams = z.union([
 
 export async function completeSetupHandler(args: z.infer<typeof completeSetupParams>): Promise<BirdieConfig> {
   if (args.mode === 'local') {
+    const db = openDb(resolveDbPath()); // creates the file and runs schema migration if it doesn't exist yet
+    db.close();
     writeConfig({ mode: 'local' });
-    openDb(resolveDbPath()); // creates the file and runs schema migration if it doesn't exist yet
   } else {
     writeConfig({ mode: 'remote', server_url: args.server_url });
   }
@@ -3002,12 +3005,12 @@ Add this registration inside `registerTools`, after the `ask_junior_struggles` r
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- setup`
+Run: `bun run --cwd backend test setup`
 Expected: PASS (2 tests passed).
 
 - [ ] **Step 6: Run the full backend test suite to verify nothing broke**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 7: Commit**
@@ -3085,7 +3088,7 @@ describe('resolveDomainProfilePath / saveDomainProfile', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- domain`
+Run: `bun run --cwd backend test domain`
 Expected: FAIL — `resolveDomainProfilePath is not a function`.
 
 - [ ] **Step 3: Modify `backend/src/domain.ts`**
@@ -3190,7 +3193,7 @@ describe('saveDomainProfileHandler', () => {
 
 - [ ] **Step 7: Run the full backend test suite**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 8: Commit**
@@ -3286,7 +3289,7 @@ Append to `backend/test/routes.test.ts`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- routes`
+Run: `bun run --cwd backend test routes`
 Expected: FAIL — `404` responses (routes don't exist yet).
 
 - [ ] **Step 3: Modify `backend/src/routes/traces.ts`**
@@ -3359,7 +3362,7 @@ Add these routes inside `lessonsRouter`, immediately after `router.get('/', ...)
 
 - [ ] **Step 5: Run the route tests to verify they pass**
 
-Run: `npm run test --workspace backend -- routes`
+Run: `bun run --cwd backend test routes`
 Expected: PASS (8 tests passed).
 
 - [ ] **Step 6: Write the failing remote-service tests**
@@ -3367,7 +3370,7 @@ Expected: PASS (8 tests passed).
 Create `backend/test/remoteService.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import { RemoteTraceService } from '../src/services/remoteTraceService.js';
 import { RemoteLessonService } from '../src/services/remoteLessonService.js';
 
@@ -3448,7 +3451,7 @@ describe('RemoteTraceService / RemoteLessonService', () => {
 
 - [ ] **Step 7: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- remoteService`
+Run: `bun run --cwd backend test remoteService`
 Expected: FAIL — `Cannot find module '../src/services/remoteTraceService.js'`.
 
 - [ ] **Step 8: Create `backend/src/services/remoteRequest.ts`**
@@ -3570,7 +3573,7 @@ export class RemoteLessonService {
 
 - [ ] **Step 11: Run the remote-service tests to verify they pass**
 
-Run: `npm run test --workspace backend -- remoteService`
+Run: `bun run --cwd backend test remoteService`
 Expected: PASS (6 tests passed).
 
 - [ ] **Step 12: Modify `backend/src/mcp/tools.ts` so `registerTools` takes a context getter, not a fixed context**
@@ -3673,7 +3676,7 @@ export function createMcpServer(getCtx: () => ToolContext, domainProfile: Domain
 Create `backend/test/mcpContext.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -3724,7 +3727,7 @@ describe('buildMcpContext', () => {
 
 - [ ] **Step 15: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- mcpContext`
+Run: `bun run --cwd backend test mcpContext`
 Expected: FAIL — `Cannot find module '../src/mcpContext.js'`.
 
 - [ ] **Step 16: Create `backend/src/mcpContext.ts`**
@@ -3762,7 +3765,7 @@ export function buildMcpContext(): ToolContext {
 
 - [ ] **Step 17: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- mcpContext`
+Run: `bun run --cwd backend test mcpContext`
 Expected: PASS (3 tests passed).
 
 - [ ] **Step 18: Modify `backend/src/cli.ts`**
@@ -3804,7 +3807,7 @@ main().catch((err) => {
 
 - [ ] **Step 19: Run the full backend test suite**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 20: Commit**
@@ -3830,7 +3833,7 @@ git commit -m "Add remote-sync REST routes, RemoteTraceService/RemoteLessonServi
 Create `backend/test/openReviewQueue.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -3864,7 +3867,7 @@ describe('openReviewQueueHandler', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- openReviewQueue`
+Run: `bun run --cwd backend test openReviewQueue`
 Expected: FAIL — `openReviewQueueHandler is not a function`.
 
 - [ ] **Step 3: Modify `backend/src/mcp/tools.ts`**
@@ -3880,6 +3883,7 @@ Add this after `saveDomainProfileHandler`:
 
 ```typescript
 let localWebServerUrl: string | undefined;
+let localWebServer: import('node:http').Server | undefined;
 
 export async function openReviewQueueHandler(): Promise<{ url: string }> {
   const config = readConfig();
@@ -3888,12 +3892,14 @@ export async function openReviewQueueHandler(): Promise<{ url: string }> {
     return { url: config.server_url! };
   }
   if (!localWebServerUrl) {
-    const port = Number(process.env.PORT ?? 4000);
+    const requestedPort = Number(process.env.PORT ?? 0);
     const ctx = buildContext();
     await new Promise<void>((resolve) => {
-      createServer(ctx).listen(port, resolve);
+      localWebServer = createServer(ctx).listen(requestedPort, '127.0.0.1', resolve);
     });
-    localWebServerUrl = `http://localhost:${port}`;
+    const address = localWebServer!.address();
+    const port = typeof address === 'object' && address ? address.port : requestedPort;
+    localWebServerUrl = `http://127.0.0.1:${port}`;
   }
   return { url: localWebServerUrl };
 }
@@ -3912,12 +3918,12 @@ Add this registration inside `registerTools`, after `save_domain_profile`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- openReviewQueue`
+Run: `bun run --cwd backend test openReviewQueue`
 Expected: PASS (2 tests passed). The local-mode branch (actually starting the web server) is intentionally not covered here — it's verified manually in Step 5, the same way Task 10/11 verify real server startup by running the CLI directly rather than through vitest.
 
 - [ ] **Step 5: Manual smoke check for local mode**
 
-Run: `cd backend && BIRDIE_CONFIG_PATH=/tmp/birdie-smoke-config.json DB_PATH=/tmp/birdie-smoke.db npx tsx src/cli.ts mcp`, then from an MCP-capable client (or a short throwaway script calling the server's stdio transport) call `complete_setup` with `{ "mode": "local" }` followed by `open_review_queue`. Expected: the tool returns `{ "url": "http://localhost:4000" }` and that URL serves the review queue page in a browser (empty, since nothing's been captured yet — that's expected).
+Run: `cd backend && BIRDIE_CONFIG_PATH=/tmp/birdie-smoke-config.json DB_PATH=/tmp/birdie-smoke.db bun src/cli.ts mcp`, then from an MCP-capable client (or a short throwaway script calling the server's stdio transport) call `complete_setup` with `{ "mode": "local" }` followed by `open_review_queue`. Expected: the tool returns a `http://127.0.0.1:<port>` URL and that URL serves the review queue page in a browser (empty, since nothing's been captured yet — that's expected).
 
 - [ ] **Step 6: Commit**
 
@@ -3932,7 +3938,7 @@ git commit -m "Add open_review_queue MCP tool"
 
 **Files:**
 - Create: `backend/src/copy.ts`
-- Create: `web/src/copy.ts` (kept identical to `backend/src/copy.ts` by hand — `backend` and `web` are separate npm workspaces with no shared package between them yet, so this is intentionally duplicated rather than cross-imported; a future pass could extract a small `@birdie/copy` workspace package if the duplication becomes a real maintenance problem)
+- Create: `web/src/copy.ts` (kept identical to `backend/src/copy.ts` by hand — `backend` and `web` are separate Bun workspaces with no shared package between them yet, so this is intentionally duplicated rather than cross-imported; a future pass could extract a small `@birdie/copy` workspace package if the duplication becomes a real maintenance problem)
 - Modify: `backend/src/mcp/tools.ts` (use `copy.trace` in the `capture_trace` description)
 - Modify: `web/src/ReviewList.tsx` (use plain-language labels instead of raw field names)
 - Test: Create `backend/test/copy.test.ts`
@@ -3945,7 +3951,7 @@ git commit -m "Add open_review_queue MCP tool"
 Create `backend/test/copy.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { copy } from '../src/copy.js';
 
 describe('copy', () => {
@@ -3962,7 +3968,7 @@ describe('copy', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- copy`
+Run: `bun run --cwd backend test copy`
 Expected: FAIL — `Cannot find module '../src/copy.js'`.
 
 - [ ] **Step 3: Create `backend/src/copy.ts`**
@@ -3986,7 +3992,7 @@ Create `web/src/copy.ts` with identical content to `backend/src/copy.ts` above.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- copy`
+Run: `bun run --cwd backend test copy`
 Expected: PASS (2 tests passed).
 
 - [ ] **Step 6: Modify `backend/src/mcp/tools.ts`**
@@ -4030,7 +4036,7 @@ Replace the promote button's label:
 
 - [ ] **Step 8: Run the full backend test suite and rebuild the web workspace**
 
-Run: `npm run test --workspace backend && npm run build --workspace web`
+Run: `bun run --cwd backend test && bun run --cwd web build`
 Expected: PASS / build succeeds with no type errors.
 
 - [ ] **Step 9: Commit**
@@ -4068,7 +4074,7 @@ it('setup-birdie prompt walks through the local/remote choice and the optional d
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm run test --workspace backend -- prompts`
+Run: `bun run --cwd backend test prompts`
 Expected: FAIL — `buildSetupBirdiePrompt is not a function`.
 
 - [ ] **Step 3: Modify `backend/src/mcp/prompts.ts`**
@@ -4112,12 +4118,12 @@ Add this registration inside `registerPrompts`, alongside the other `server.addP
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `npm run test --workspace backend -- prompts`
+Run: `bun run --cwd backend test prompts`
 Expected: PASS (4 tests passed).
 
 - [ ] **Step 5: Run the full backend test suite**
 
-Run: `npm run test --workspace backend`
+Run: `bun run --cwd backend test`
 Expected: PASS (all tests across all files still pass).
 
 - [ ] **Step 6: Commit**
@@ -4146,25 +4152,17 @@ git commit -m "Add setup-birdie MCP prompt for the first-run conversation"
   "description": "Capture mentorship moments (a senior's redline of a junior's draft), extract a reviewed lesson from them, and let juniors ask how a senior handled something or seniors ask what a junior is struggling with.",
   "mcpServers": {
     "birdie": {
-      "command": "npx",
-      "args": ["tsx", "backend/src/cli.ts", "mcp"]
+      "command": "bun",
+      "args": ["backend/src/cli.ts", "mcp"]
     }
   },
   "skills": ["skills/birdie-mentor"]
 }
 ```
 
-- [ ] **Step 2: Verify the manifest shape against a known-working plugin**
+This manifest is intentionally concrete, not a placeholder: it uses Bun to execute the TypeScript MCP entrypoint directly and relies on Claude Code resolving the command relative to the plugin root. The primary plugin path therefore does not ask the user to run `bun install`, edit MCP JSON, or install a separate TypeScript runner.
 
-The exact key names Claude Code expects in a plugin manifest (`mcpServers`, `skills`, or otherwise) can change between Claude Code versions. Before trusting the content above, compare it against an already-installed plugin's manifest that also bundles an MCP server — for example, run:
-
-```bash
-find ~/.claude/plugins -name plugin.json -exec grep -l mcpServers {} \;
-```
-
-and open one of the results to confirm the current schema (key names, whether `args` supports relative paths like `backend/src/cli.ts`, how `cwd`/working directory is resolved for the bundled command). Adjust `.claude-plugin/plugin.json` above to match if the schema has changed since this plan was written.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add .claude-plugin/plugin.json
@@ -4256,11 +4254,11 @@ This is the intended way to run Birdie - no terminal commands beyond the install
 If you're not on Claude Code, or you're developing Birdie itself, you can run and register the server by hand:
 
 \`\`\`bash
-npm install
-npm run dev:backend -- mcp   # MCP server only (stdio)
-npm run dev:backend -- web   # REST API + web UI on http://localhost:4000
-npm run dev:backend          # both
-npm run dev:web              # Vite dev server for the web UI (proxies API calls to :4000)
+bun install
+bun run --cwd backend dev mcp   # MCP server only (stdio)
+bun run --cwd backend dev web   # REST API + web UI on http://localhost:4000
+bun run --cwd backend dev       # both
+bun run --cwd web dev           # Vite dev server for the web UI (proxies API calls to :4000)
 \`\`\`
 
 Point your MCP host's config at the `mcp` mode:
@@ -4269,8 +4267,8 @@ Point your MCP host's config at the `mcp` mode:
 {
   "mcpServers": {
     "birdie": {
-      "command": "npx",
-      "args": ["tsx", "backend/src/cli.ts", "mcp"],
+      "command": "bun",
+      "args": ["backend/src/cli.ts", "mcp"],
       "cwd": "/path/to/birdie"
     }
   }
@@ -4284,7 +4282,7 @@ Local storage and the customized domain profile live under `~/.birdie/` (`config
 ## Testing
 
 \`\`\`bash
-npm run test --workspace backend
+bun run --cwd backend test
 \`\`\`
 ```
 
