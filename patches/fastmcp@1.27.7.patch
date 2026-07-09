@@ -1,24 +1,27 @@
+diff --git a/node_modules/fastmcp/.bun-tag-1f28d3a5ac143d1b b/.bun-tag-1f28d3a5ac143d1b
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/FastMCP.js b/dist/FastMCP.js
-index 6b18695adf24eb41241b6a04d7a5dfabda6f01fb..39d9fc6e1d1bbfcf60e494b70e6093e1d602a03a 100644
+index 6b18695adf24eb41241b6a04d7a5dfabda6f01fb..2d44c4a5375161ebcba0ee4642d6bd5056fb7fcb 100644
 --- a/dist/FastMCP.js
 +++ b/dist/FastMCP.js
-@@ -251,6 +251,7 @@ var FastMCPSession = class extends FastMCPSessionEventEmitter {
-       this.#capabilities.prompts = {};
+@@ -258,7 +258,6 @@ var FastMCPSession = class extends FastMCPSessionEventEmitter {
+     this.setupErrorHandling();
+     this.setupLoggingHandlers();
+     this.setupRootsHandlers();
+-    this.setupCompleteHandlers();
+     if (tools.length) {
+       this.setupToolHandlers(tools);
      }
-     this.#capabilities.logging = {};
-+    this.#capabilities.completions = {};
-     this.#server = new Server(
-       { name, version },
-       { capabilities: this.#capabilities, instructions }
 diff --git a/src/FastMCP.ts b/src/FastMCP.ts
-index e03f69fba9520aa69c185155fb98a9fddd8ae17f..e0e94d38026056e05657030dd40a51077570533c 100644
+index e03f69fba9520aa69c185155fb98a9fddd8ae17f..03d1b5e6c780db4e2fbec245b1972ed95fc0743d 100644
 --- a/src/FastMCP.ts
 +++ b/src/FastMCP.ts
-@@ -628,6 +628,7 @@ export class FastMCPSession<
-     }
+@@ -637,7 +637,6 @@ export class FastMCPSession<
+     this.setupErrorHandling();
+     this.setupLoggingHandlers();
+     this.setupRootsHandlers();
+-    this.setupCompleteHandlers();
  
-     this.#capabilities.logging = {};
-+    this.#capabilities.completions = {};
- 
-     this.#server = new Server(
-       { name: name, version: version },
+     if (tools.length) {
+       this.setupToolHandlers(tools);
