@@ -61,6 +61,16 @@ Ask Birdie to switch at any point — e.g. "switch me to the team server at http
 - Local domain profile: `~/.birdie/domain.md`, falling back to `domain.md`
 - Dev overrides: `BIRDIE_CONFIG_PATH`, `DB_PATH`, `DOMAIN_PROFILE_PATH`, `PORT`
 
+## GitHub Pages Docs
+
+This repo includes a static documentation site in `docs/`. To publish it with GitHub Pages:
+
+1. Push the repo to GitHub.
+2. Open the repo's **Settings** > **Pages**.
+3. Set **Source** to **Deploy from a branch**.
+4. Choose your default branch and the `/docs` folder.
+5. Save the setting. No build step is required.
+
 ### Running components standalone
 
 The plugin only needs the MCP server; it starts the web UI itself on demand when you ask Birdie to open the review queue. Run these directly only if you're working outside the plugin — e.g. hitting the REST API on its own, or iterating on the web UI with hot reload:

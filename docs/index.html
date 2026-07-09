@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Birdie is a local-first mentorship capture plugin for turning reviewed before/after edits into searchable lessons."
+    />
+    <title>Birdie Docs</title>
+    <link rel="icon" href="assets/birdie-mascot.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Birdie home">
+        <img src="assets/birdie-mascot.png" alt="" />
+        <span>Birdie</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#install">Install</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#reference">Reference</a>
+        <a href="#pages">Publish</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Local-first mentorship capture</p>
+          <h1>Turn before/after edits into reviewed team lessons.</h1>
+          <p class="lede">
+            Birdie is a Claude Code plugin and MCP server that captures real edits, lets the assistant extract
+            candidate lessons, keeps humans in the review loop, and answers questions from approved examples.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#install">Install Birdie</a>
+            <a class="button secondary" href="#workflow">See the workflow</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <img src="assets/birdie-mascot.png" alt="" />
+        </div>
+      </section>
+
+      <section class="band summary-band" aria-labelledby="what-birdie-does">
+        <div class="section-heading">
+          <p class="eyebrow">What it does</p>
+          <h2 id="what-birdie-does">A compact review loop for mentorship knowledge.</h2>
+        </div>
+        <div class="summary-grid">
+          <article>
+            <span class="number">01</span>
+            <h3>Capture the edit</h3>
+            <p>Store the before text, after text, contributor names, role context, and optional playbook guidance.</p>
+          </article>
+          <article>
+            <span class="number">02</span>
+            <h3>Extract the lesson</h3>
+            <p>The MCP host does the reasoning. Birdie validates the quote and saves the result for review.</p>
+          </article>
+          <article>
+            <span class="number">03</span>
+            <h3>Promote with review</h3>
+            <p>Review, edit, reject, or promote lessons before they become part of the searchable teaching set.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" class="content-section">
+        <div class="section-heading">
+          <p class="eyebrow">Install</p>
+          <h2>Use Birdie as a Claude Code plugin.</h2>
+        </div>
+        <div class="split">
+          <div>
+            <p>
+              The published plugin ships with a bundled MCP server for macOS, Linux, and Windows. Plugin users do not
+              need to clone the repository, run <code>bun install</code>, or start a separate server.
+            </p>
+            <pre><code>/plugin marketplace add nigelteosw/birdie
+/plugin install birdie</code></pre>
+          </div>
+          <div class="callout">
+            <h3>First run</h3>
+            <p>
+              Start a new Claude Code conversation and ask Birdie to set itself up. If you do not have a shared team
+              server URL, choose local mode.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section alt" aria-labelledby="local-mode">
+        <div class="section-heading">
+          <p class="eyebrow">Local mode</p>
+          <h2 id="local-mode">State stays under your home directory.</h2>
+        </div>
+        <div class="details-grid">
+          <article>
+            <h3>Config</h3>
+            <code>~/.birdie/config.json</code>
+            <p>Stores whether Birdie should use local storage or a shared remote server.</p>
+          </article>
+          <article>
+            <h3>Database</h3>
+            <code>~/.birdie/birdie.db</code>
+            <p>Stores captured traces, candidate lessons, review status, and promoted examples.</p>
+          </article>
+          <article>
+            <h3>Domain profile</h3>
+            <code>~/.birdie/domain.md</code>
+            <p>Optionally customizes the domain, typology, and mentorship-worthy guidance.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="workflow" class="content-section">
+        <div class="section-heading">
+          <p class="eyebrow">Workflow</p>
+          <h2>Capture, review, then query.</h2>
+        </div>
+        <div class="workflow">
+          <article>
+            <h3>1. Capture a before/after edit</h3>
+            <p>Ask Birdie to capture an edit as a mentorship example. Include who submitted it, who it affected, and why the edit mattered.</p>
+          </article>
+          <article>
+            <h3>2. Extract a candidate lesson</h3>
+            <p>Run the extraction prompt for the trace. The assistant proposes the quote, change, rationale, typology, and playbook alignment.</p>
+          </article>
+          <article>
+            <h3>3. Review the queue</h3>
+            <p>
+              Birdie opens the review UI on demand, usually at <code>http://127.0.0.1:6677</code>. It reuses an existing
+              Birdie server on that port or falls back to a free port when needed.
+            </p>
+          </article>
+          <article>
+            <h3>4. Ask from reviewed examples</h3>
+            <p>Ask how a senior handled a similar situation, or ask what a junior is struggling with across promoted lessons.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="reference" class="content-section alt">
+        <div class="section-heading">
+          <p class="eyebrow">Reference</p>
+          <h2>Prompts, tools, and endpoints.</h2>
+        </div>
+        <div class="reference-grid">
+          <article>
+            <h3>MCP prompts</h3>
+            <ul>
+              <li><code>setup-birdie</code></li>
+              <li><code>extract-lesson</code></li>
+              <li><code>ask-senior-approach</code></li>
+              <li><code>ask-junior-struggles</code></li>
+            </ul>
+          </article>
+          <article>
+            <h3>MCP tools</h3>
+            <ul>
+              <li><code>complete_setup</code></li>
+              <li><code>save_domain_profile</code></li>
+              <li><code>open_review_queue</code></li>
+              <li><code>capture_trace</code></li>
+              <li><code>save_extraction</code></li>
+              <li><code>review_lesson</code></li>
+              <li><code>promote_lesson</code></li>
+            </ul>
+          </article>
+          <article>
+            <h3>REST endpoints</h3>
+            <ul>
+              <li><code>POST /traces</code></li>
+              <li><code>GET /traces</code></li>
+              <li><code>POST /traces/:id/extract</code></li>
+              <li><code>GET /lessons</code></li>
+              <li><code>POST /lessons/:id/promote</code></li>
+              <li><code>GET /lessons/ask/senior-approach</code></li>
+              <li><code>GET /lessons/ask/junior-struggles</code></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="content-section" aria-labelledby="development">
+        <div class="section-heading">
+          <p class="eyebrow">Development</p>
+          <h2 id="development">Work on Birdie locally.</h2>
+        </div>
+        <div class="split">
+          <div>
+            <pre><code>bun install
+bun run build
+bun run test</code></pre>
+          </div>
+          <div>
+            <p>
+              The plugin only needs the MCP server. Run the REST API or web UI directly when you are iterating outside
+              the plugin flow.
+            </p>
+            <pre><code>bun run dev:backend -- web
+bun run dev:backend -- mcp</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="pages" class="content-section publish-section">
+        <div class="section-heading">
+          <p class="eyebrow">GitHub Pages</p>
+          <h2>Publish these docs from the <code>docs/</code> folder.</h2>
+        </div>
+        <ol class="steps">
+          <li>Push this repository to GitHub.</li>
+          <li>Open <strong>Settings</strong>, then <strong>Pages</strong>.</li>
+          <li>Set <strong>Source</strong> to <strong>Deploy from a branch</strong>.</li>
+          <li>Choose your default branch and the <strong>/docs</strong> folder.</li>
+          <li>Save. GitHub will publish the site at the URL shown on that page.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p>
+      <a href="https://github.com/nigelteosw/birdie">GitHub repository</a>
+    </footer>
+  </body>
+</html>
