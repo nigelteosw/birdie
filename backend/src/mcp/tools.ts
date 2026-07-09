@@ -6,10 +6,23 @@ import { copy } from '../copy.js';
 
 export type McpContextFactory = () => McpContext;
 
-const setupParams = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('local') }),
-  z.object({ mode: z.literal('remote'), server_url: z.string().url() }),
-]);
+// A discriminated union serializes to a top-level `anyOf` with no `type:
+// "object"`, which Claude Code's MCP client rejects for tool inputSchemas.
+// Flatten to one object and cross-validate server_url with superRefine.
+const setupParams = z
+  .object({
+    mode: z.enum(['local', 'remote']),
+    server_url: z.string().url().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'remote' && !data.server_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'server_url is required when mode is "remote"',
+        path: ['server_url'],
+      });
+    }
+  });
 
 const domainProfileParams = z.object({ content: z.string().min(1) });
 const emptyParams = z.object({});
@@ -152,7 +165,9 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
 }
 
 export function completeSetupHandler(ctx: McpContext, args: z.infer<typeof setupParams>): BirdieConfig {
-  return ctx.completeSetup(args);
+  const config: BirdieConfig =
+    args.mode === 'remote' ? { mode: 'remote', server_url: args.server_url! } : { mode: 'local' };
+  return ctx.completeSetup(config);
 }
 
 export function saveDomainProfileHandler(ctx: McpContext, args: z.infer<typeof domainProfileParams>): { path: string } {

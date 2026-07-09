@@ -77844,10 +77844,18 @@ var copy = {
 };
 
 // backend/src/mcp/tools.ts
-var setupParams = external_exports.discriminatedUnion("mode", [
-  external_exports.object({ mode: external_exports.literal("local") }),
-  external_exports.object({ mode: external_exports.literal("remote"), server_url: external_exports.string().url() })
-]);
+var setupParams = external_exports.object({
+  mode: external_exports.enum(["local", "remote"]),
+  server_url: external_exports.string().url().optional()
+}).superRefine((data, ctx) => {
+  if (data.mode === "remote" && !data.server_url) {
+    ctx.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      message: 'server_url is required when mode is "remote"',
+      path: ["server_url"]
+    });
+  }
+});
 var domainProfileParams = external_exports.object({ content: external_exports.string().min(1) });
 var emptyParams = external_exports.object({});
 var captureTraceParams = external_exports.object({
@@ -77983,7 +77991,8 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
 }
 function completeSetupHandler(ctx, args) {
-  return ctx.completeSetup(args);
+  const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url } : { mode: "local" };
+  return ctx.completeSetup(config2);
 }
 function saveDomainProfileHandler(ctx, args) {
   return ctx.saveDomainProfile(args.content);
