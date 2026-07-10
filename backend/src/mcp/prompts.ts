@@ -22,22 +22,6 @@ export function registerPrompts(server: FastMCP, ctxFactory: () => McpContext = 
     arguments: [{ name: 'trace_id', description: 'The example to extract from', required: true }],
     load: async (args: { trace_id: string }) => buildExtractLessonPrompt(ctxFactory().domainProfile, args.trace_id),
   });
-  mcp.addPrompt({
-    name: 'ask-senior-approach',
-    description: 'Answer how a senior handled a similar situation.',
-    arguments: [
-      { name: 'question', description: "The junior's question", required: true },
-      { name: 'senior_name', description: 'Optional senior name', required: false },
-    ],
-    load: async (args: { question: string; senior_name?: string }) =>
-      buildAskSeniorApproachPrompt(ctxFactory().domainProfile, args.question, args.senior_name),
-  });
-  mcp.addPrompt({
-    name: 'ask-junior-struggles',
-    description: 'Summarize what a junior is struggling with.',
-    arguments: [{ name: 'junior_name', description: 'Optional junior name', required: false }],
-    load: async (args: { junior_name?: string }) => buildAskJuniorStrugglesPrompt(ctxFactory().domainProfile, args.junior_name),
-  });
 }
 
 export function buildSetupPrompt(profile: DomainProfile): string {
@@ -88,22 +72,4 @@ Steps:
 4. The quote must be copied verbatim from before_text. Birdie checks this in code.
 5. If the edit differs from the playbook, say that directly in playbook_note.
 6. Call save_extraction.`;
-}
-
-export function buildAskSeniorApproachPrompt(profile: DomainProfile, question: string, seniorName?: string): string {
-  return `Answer a junior's question using only reviewed Birdie lessons.
-
-${profile.raw}
-
-Call ask_senior_approach with question=${JSON.stringify(question)}${seniorName ? ` and senior_name=${JSON.stringify(seniorName)}` : ''}.
-If no lessons come back, say Birdie has no reviewed examples for that yet. Do not invent an answer.`;
-}
-
-export function buildAskJuniorStrugglesPrompt(profile: DomainProfile, juniorName?: string): string {
-  return `Summarize reviewed Birdie lessons for a senior.
-
-${profile.raw}
-
-Call ask_junior_struggles${juniorName ? ` with junior_name=${JSON.stringify(juniorName)}` : ' with no junior_name'}.
-Use typology_counts for the pattern and cite concrete lesson cards as examples.`;
 }

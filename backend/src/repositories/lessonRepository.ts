@@ -1,13 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SqliteDb } from '../db.js';
-import type {
-  JuniorStrugglesResult,
-  LessonEdit,
-  LessonFilters,
-  LessonWithTrace,
-  NewExtraction,
-  PromotePayload,
-} from '../types.js';
+import type { LessonEdit, LessonFilters, LessonWithTrace, NewExtraction, PromotePayload } from '../types.js';
 
 interface LessonRow extends Omit<LessonWithTrace, 'quote_verified'> {
   quote_verified: number;
@@ -134,48 +127,10 @@ export class LessonRepository {
       );
     return this.getById(id)!;
   }
-
-  searchPromoted(question: string, senior_name?: string): LessonWithTrace[] {
-    const keywords = question
-      .toLowerCase()
-      .split(/\W+/)
-      .filter((word) => word.length > 2);
-    const clauses = ["l.status = 'promoted'"];
-    const params: string[] = [];
-    if (senior_name) {
-      clauses.push('t.senior_name = ?');
-      params.push(senior_name);
-    }
-    if (keywords.length > 0) {
-      clauses.push(
-        `(${keywords
-          .map((keyword) => {
-            const value = `%${keyword}%`;
-            params.push(value, value, value, value);
-            return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ? OR lower(t.playbook_ref) LIKE ?)`;
-          })
-          .join(' OR ')})`
-      );
-    }
-    const rows = this.db
-      .prepare(`${lessonSelect()} WHERE ${clauses.join(' AND ')} ORDER BY l.promoted_at DESC`)
-      .all(...params) as LessonRow[];
-    return rows.map(rowToLesson);
-  }
-
-  strugglesFor(junior_name?: string): JuniorStrugglesResult {
-    const filters: LessonFilters = { status: 'promoted', junior_name };
-    const lessons = this.list(filters);
-    const typology_counts: Record<string, number> = {};
-    for (const lesson of lessons) {
-      typology_counts[lesson.typology] = (typology_counts[lesson.typology] ?? 0) + 1;
-    }
-    return { lessons, typology_counts };
-  }
 }
 
 function lessonSelect(): string {
-  return `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+  return `SELECT l.*, t.submitted_by, t.playbook_ref
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id`;
 }
@@ -183,11 +138,28 @@ function lessonSelect(): string {
 function filterWhere(filters: LessonFilters): { where: string; params: string[] } {
   const clauses: string[] = [];
   const params: string[] = [];
-  for (const key of ['status', 'typology', 'playbook_ref', 'junior_name', 'senior_name'] as const) {
+  for (const key of ['status', 'typology', 'playbook_ref', 'submitted_by'] as const) {
     const value = filters[key];
     if (value) {
       clauses.push(key === 'status' || key === 'typology' ? `l.${key} = ?` : `t.${key} = ?`);
       params.push(value);
+    }
+  }
+  if (filters.q) {
+    const keywords = filters.q
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((word) => word.length > 2);
+    if (keywords.length > 0) {
+      clauses.push(
+        `(${keywords
+          .map((keyword) => {
+            const value = `%${keyword}%`;
+            params.push(value, value, value);
+            return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
+          })
+          .join(' OR ')})`
+      );
     }
   }
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };

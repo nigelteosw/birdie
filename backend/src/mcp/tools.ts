@@ -54,9 +54,6 @@ const captureTraceParams = z.object({
   before_text: z.string().min(1),
   after_text: z.string().min(1),
   submitted_by: z.string().min(1),
-  submitted_by_role: z.enum(['senior', 'junior']),
-  junior_name: z.string().optional(),
-  senior_name: z.string().optional(),
   playbook_ref: z.string().optional(),
   playbook_text: z.string().optional(),
   context_note: z.string().optional(),
@@ -76,8 +73,6 @@ const listLessonsParams = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
   typology: z.string().optional(),
   playbook_ref: z.string().optional(),
-  junior_name: z.string().optional(),
-  senior_name: z.string().optional(),
 });
 const reviewLessonParams = z.object({
   lesson_id: z.string().min(1),
@@ -95,8 +90,6 @@ const promoteLessonParams = z.object({
   why_it_matters: z.string().min(1).optional(),
   typology: z.string().min(1).optional(),
 });
-const askSeniorParams = z.object({ question: z.string().min(1), senior_name: z.string().optional() });
-const askJuniorParams = z.object({ junior_name: z.string().optional() });
 
 export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = buildMcpContext): void {
   const mcp = server as any;
@@ -197,20 +190,6 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
       const { lesson_id, ...payload } = args;
       return json(await requireLessonService(ctxFactory()).promote(lesson_id, payload));
     },
-  });
-  mcp.addTool({
-    name: 'ask_senior_approach',
-    description: 'Find reviewed lessons matching a junior question, optionally filtered to one senior.',
-    parameters: askSeniorParams,
-    execute: async (args: z.infer<typeof askSeniorParams>) =>
-      json(await requireLessonService(ctxFactory()).askSeniorApproach(args.question, args.senior_name)),
-  });
-  mcp.addTool({
-    name: 'ask_junior_struggles',
-    description: 'Find reviewed lessons for a junior, with category counts.',
-    parameters: askJuniorParams,
-    execute: async (args: z.infer<typeof askJuniorParams>) =>
-      json(await requireLessonService(ctxFactory()).askJuniorStruggles(args.junior_name)),
   });
 }
 

@@ -21,16 +21,6 @@ const promoteBody = z.object({
 export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
 
-  router.get('/ask/senior-approach', (req, res) => {
-    const question = z.string().min(1).safeParse(req.query.question);
-    if (!question.success) return res.status(400).json({ error: question.error.message });
-    res.json(ctx.lessonService.askSeniorApproach(question.data, req.query.senior_name as string | undefined));
-  });
-
-  router.get('/ask/junior-struggles', (req, res) => {
-    res.json(ctx.lessonService.askJuniorStruggles(req.query.junior_name as string | undefined));
-  });
-
   router.get('/', (req, res) => {
     const status = statusQuery.safeParse(req.query.status);
     if (!status.success) return res.status(400).json({ error: status.error.message });
@@ -39,8 +29,8 @@ export function lessonsRouter(ctx: AppContext): Router {
         status: status.data,
         typology: req.query.typology as string | undefined,
         playbook_ref: req.query.playbook_ref as string | undefined,
-        junior_name: req.query.junior_name as string | undefined,
-        senior_name: req.query.senior_name as string | undefined,
+        submitted_by: req.query.submitted_by as string | undefined,
+        q: req.query.q as string | undefined,
       })
     );
   });

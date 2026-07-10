@@ -1,14 +1,10 @@
 export type TraceStatus = 'captured' | 'extracted' | 'skipped';
 export type LessonStatus = 'pending_review' | 'rejected' | 'promoted';
 export type PlaybookAlignment = 'aligned' | 'diverges' | 'not_applicable';
-export type SubmittedByRole = 'senior' | 'junior';
 
 export interface Trace {
   id: string;
   submitted_by: string;
-  submitted_by_role: SubmittedByRole;
-  junior_name: string | null;
-  senior_name: string | null;
   before_text: string;
   after_text: string;
   playbook_ref: string | null;
@@ -22,9 +18,6 @@ export interface Trace {
 
 export interface NewTrace {
   submitted_by: string;
-  submitted_by_role: SubmittedByRole;
-  junior_name?: string | null;
-  senior_name?: string | null;
   before_text: string;
   after_text: string;
   playbook_ref?: string | null;
@@ -51,8 +44,7 @@ export interface Lesson {
 }
 
 export interface LessonWithTrace extends Lesson {
-  junior_name: string | null;
-  senior_name: string | null;
+  submitted_by: string;
   playbook_ref: string | null;
 }
 
@@ -86,13 +78,8 @@ export interface LessonFilters {
   status?: LessonStatus;
   typology?: string;
   playbook_ref?: string;
-  junior_name?: string;
-  senior_name?: string;
-}
-
-export interface JuniorStrugglesResult {
-  lessons: LessonWithTrace[];
-  typology_counts: Record<string, number>;
+  submitted_by?: string;
+  q?: string;
 }
 
 export interface TraceServiceLike {
@@ -108,8 +95,6 @@ export interface LessonServiceLike {
   get(id: string): LessonWithTrace | undefined | Promise<LessonWithTrace | undefined>;
   review(id: string, changes: LessonEdit): LessonWithTrace | Promise<LessonWithTrace>;
   promote(id: string, payload: PromotePayload): LessonWithTrace | Promise<LessonWithTrace>;
-  askSeniorApproach(question: string, senior_name?: string): LessonWithTrace[] | Promise<LessonWithTrace[]>;
-  askJuniorStruggles(junior_name?: string): JuniorStrugglesResult | Promise<JuniorStrugglesResult>;
 }
 
 export type BirdieConfig =

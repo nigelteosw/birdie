@@ -22,7 +22,6 @@ describe('remote services', () => {
     const traces = new RemoteTraceService('http://birdie.test');
     await traces.capture({
       submitted_by: 'Jane',
-      submitted_by_role: 'junior',
       before_text: 'before',
       after_text: 'after',
     });
@@ -44,22 +43,17 @@ describe('remote services', () => {
 
   it('maps lesson methods to REST routes', async () => {
     const lessons = new RemoteLessonService('http://birdie.test');
-    await lessons.list({ status: 'promoted', junior_name: 'Jane' });
+    await lessons.list({ status: 'promoted', playbook_ref: 'PB-1' });
     await lessons.promote('lesson-1', { reviewer: 'Sarah' });
-    await lessons.askSeniorApproach('indemnity cap', 'Sarah');
-    await lessons.askJuniorStruggles('Jane');
 
     expect(calls.map((call) => `${call.init?.method ?? 'GET'} ${call.url}`)).toEqual([
-      'GET http://birdie.test/lessons?status=promoted&junior_name=Jane',
+      'GET http://birdie.test/lessons?status=promoted&playbook_ref=PB-1',
       'POST http://birdie.test/lessons/lesson-1/promote',
-      'GET http://birdie.test/lessons/ask/senior-approach?question=indemnity+cap&senior_name=Sarah',
-      'GET http://birdie.test/lessons/ask/junior-struggles?junior_name=Jane',
     ]);
   });
 });
 
 function responseFor(url: string, init?: RequestInit): unknown {
-  if (url.includes('/ask/junior-struggles')) return { lessons: [], typology_counts: {} };
   if (url.includes('/lessons') && !url.includes('/promote')) return [];
   if (url.includes('/traces') && init?.method === 'POST' && !url.includes('/extract')) {
     return { id: 'trace-1', status: 'captured' };

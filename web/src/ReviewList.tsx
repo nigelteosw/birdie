@@ -12,7 +12,7 @@ export default function ReviewList({ refreshSignal }: Props) {
   const [message, setMessage] = useState<string | null>(null);
 
   async function refresh() {
-    const [profile, pending] = await Promise.all([getDomainProfile(), listLessons('pending_review')]);
+    const [profile, pending] = await Promise.all([getDomainProfile(), listLessons({ status: 'pending_review' })]);
     setTypologies(profile.typology_categories);
     setLessons(pending);
   }
@@ -74,8 +74,7 @@ export default function ReviewList({ refreshSignal }: Props) {
         {lessons.map((lesson) => (
           <article key={lesson.id} className="lesson-card">
             <div className="meta">
-              <span>Junior: {lesson.junior_name || 'Not set'}</span>
-              <span>Senior: {lesson.senior_name || 'Not set'}</span>
+              <span>Submitted by: {lesson.submitted_by}</span>
               {lesson.playbook_ref && <span>Playbook: {lesson.playbook_ref}</span>}
             </div>
             {!lesson.quote_verified && <p className="warning">We could not find this exact wording in the original. Please check it.</p>}
