@@ -65186,9 +65186,6 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
       submitted_by TEXT NOT NULL,
-      submitted_by_role TEXT NOT NULL,
-      junior_name TEXT,
-      senior_name TEXT,
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
       playbook_ref TEXT,
@@ -65221,6 +65218,16 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
+  dropLegacyRoleColumns(db);
+}
+function dropLegacyRoleColumns(db) {
+  const columns = db.prepare("PRAGMA table_info(traces)").all();
+  const names = new Set(columns.map((column) => column.name));
+  for (const column of ["submitted_by_role", "junior_name", "senior_name"]) {
+    if (names.has(column)) {
+      db.exec(`ALTER TABLE traces DROP COLUMN ${column}`);
+    }
+  }
 }
 
 // backend/src/domain.ts
@@ -65439,49 +65446,32 @@ var LessonRepository = class {
     );
     return this.getById(id);
   }
-  searchPromoted(question, senior_name) {
-    const keywords = question.toLowerCase().split(/\W+/).filter((word) => word.length > 2);
-    const clauses = ["l.status = 'promoted'"];
-    const params = [];
-    if (senior_name) {
-      clauses.push("t.senior_name = ?");
-      params.push(senior_name);
-    }
-    if (keywords.length > 0) {
-      clauses.push(
-        `(${keywords.map((keyword) => {
-          const value = `%${keyword}%`;
-          params.push(value, value, value, value);
-          return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ? OR lower(t.playbook_ref) LIKE ?)`;
-        }).join(" OR ")})`
-      );
-    }
-    const rows = this.db.prepare(`${lessonSelect()} WHERE ${clauses.join(" AND ")} ORDER BY l.promoted_at DESC`).all(...params);
-    return rows.map(rowToLesson);
-  }
-  strugglesFor(junior_name) {
-    const filters = { status: "promoted", junior_name };
-    const lessons = this.list(filters);
-    const typology_counts = {};
-    for (const lesson of lessons) {
-      typology_counts[lesson.typology] = (typology_counts[lesson.typology] ?? 0) + 1;
-    }
-    return { lessons, typology_counts };
-  }
 };
 function lessonSelect() {
-  return `SELECT l.*, t.junior_name, t.senior_name, t.playbook_ref
+  return `SELECT l.*, t.submitted_by, t.playbook_ref
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id`;
 }
 function filterWhere(filters) {
   const clauses = [];
   const params = [];
-  for (const key of ["status", "typology", "playbook_ref", "junior_name", "senior_name"]) {
+  for (const key of ["status", "typology", "playbook_ref", "submitted_by"]) {
     const value = filters[key];
     if (value) {
       clauses.push(key === "status" || key === "typology" ? `l.${key} = ?` : `t.${key} = ?`);
       params.push(value);
+    }
+  }
+  if (filters.q) {
+    const keywords = filters.q.toLowerCase().split(/\W+/).filter((word) => word.length > 2);
+    if (keywords.length > 0) {
+      clauses.push(
+        `(${keywords.map((keyword) => {
+          const value = `%${keyword}%`;
+          params.push(value, value, value);
+          return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
+        }).join(" OR ")})`
+      );
     }
   }
   return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
@@ -65497,17 +65487,13 @@ var TraceRepository = class {
     const id = randomUUID2();
     this.db.prepare(
       `INSERT INTO traces (
-          id, submitted_by, submitted_by_role, junior_name, senior_name,
-          before_text, after_text, playbook_ref, playbook_text, context_note, source, status
+          id, submitted_by, before_text, after_text, playbook_ref, playbook_text, context_note, source, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'captured'
+          ?, ?, ?, ?, ?, ?, ?, ?, 'captured'
         )`
     ).run(
       id,
       input.submitted_by,
-      input.submitted_by_role,
-      input.junior_name ?? null,
-      input.senior_name ?? null,
       input.before_text,
       input.after_text,
       input.playbook_ref ?? null,
@@ -65567,12 +65553,6 @@ var LessonService = class {
       ...payload,
       quote_verified: payload.quote === void 0 ? current.quote_verified : this.verifyLessonQuote(current.trace_id, payload.quote)
     });
-  }
-  askSeniorApproach(question, senior_name) {
-    return this.lessons.searchPromoted(question, senior_name);
-  }
-  askJuniorStruggles(junior_name) {
-    return this.lessons.strugglesFor(junior_name);
   }
   requireLesson(id) {
     const lesson = this.lessons.getById(id);
@@ -65689,14 +65669,6 @@ var promoteBody = external_exports.object({
 });
 function lessonsRouter(ctx) {
   const router = (0, import_express.Router)();
-  router.get("/ask/senior-approach", (req, res) => {
-    const question = external_exports.string().min(1).safeParse(req.query.question);
-    if (!question.success) return res.status(400).json({ error: question.error.message });
-    res.json(ctx.lessonService.askSeniorApproach(question.data, req.query.senior_name));
-  });
-  router.get("/ask/junior-struggles", (req, res) => {
-    res.json(ctx.lessonService.askJuniorStruggles(req.query.junior_name));
-  });
   router.get("/", (req, res) => {
     const status = statusQuery.safeParse(req.query.status);
     if (!status.success) return res.status(400).json({ error: status.error.message });
@@ -65705,8 +65677,8 @@ function lessonsRouter(ctx) {
         status: status.data,
         typology: req.query.typology,
         playbook_ref: req.query.playbook_ref,
-        junior_name: req.query.junior_name,
-        senior_name: req.query.senior_name
+        submitted_by: req.query.submitted_by,
+        q: req.query.q
       })
     );
   });
@@ -65746,9 +65718,6 @@ var createTraceBody = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
   submitted_by: external_exports.string().min(1),
-  submitted_by_role: external_exports.enum(["senior", "junior"]),
-  junior_name: external_exports.string().optional(),
-  senior_name: external_exports.string().optional(),
   playbook_ref: external_exports.string().optional(),
   playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
@@ -65890,15 +65859,6 @@ var RemoteLessonService = class {
       method: "POST",
       body: JSON.stringify(payload)
     });
-  }
-  askSeniorApproach(question, senior_name) {
-    return requestJson(
-      this.serverUrl,
-      `/lessons/ask/senior-approach${query({ question, senior_name })}`
-    );
-  }
-  askJuniorStruggles(junior_name) {
-    return requestJson(this.serverUrl, `/lessons/ask/junior-struggles${query({ junior_name })}`);
   }
 };
 function query(params) {
@@ -77812,21 +77772,6 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
     arguments: [{ name: "trace_id", description: "The example to extract from", required: true }],
     load: async (args) => buildExtractLessonPrompt(ctxFactory().domainProfile, args.trace_id)
   });
-  mcp.addPrompt({
-    name: "ask-senior-approach",
-    description: "Answer how a senior handled a similar situation.",
-    arguments: [
-      { name: "question", description: "The junior's question", required: true },
-      { name: "senior_name", description: "Optional senior name", required: false }
-    ],
-    load: async (args) => buildAskSeniorApproachPrompt(ctxFactory().domainProfile, args.question, args.senior_name)
-  });
-  mcp.addPrompt({
-    name: "ask-junior-struggles",
-    description: "Summarize what a junior is struggling with.",
-    arguments: [{ name: "junior_name", description: "Optional junior name", required: false }],
-    load: async (args) => buildAskJuniorStrugglesPrompt(ctxFactory().domainProfile, args.junior_name)
-  });
 }
 function buildSetupPrompt(profile) {
   return `Birdie needs a one-time setup.
@@ -77863,22 +77808,6 @@ Steps:
 5. If the edit differs from the playbook, say that directly in playbook_note.
 6. Call save_extraction.`;
 }
-function buildAskSeniorApproachPrompt(profile, question, seniorName) {
-  return `Answer a junior's question using only reviewed Birdie lessons.
-
-${profile.raw}
-
-Call ask_senior_approach with question=${JSON.stringify(question)}${seniorName ? ` and senior_name=${JSON.stringify(seniorName)}` : ""}.
-If no lessons come back, say Birdie has no reviewed examples for that yet. Do not invent an answer.`;
-}
-function buildAskJuniorStrugglesPrompt(profile, juniorName) {
-  return `Summarize reviewed Birdie lessons for a senior.
-
-${profile.raw}
-
-Call ask_junior_struggles${juniorName ? ` with junior_name=${JSON.stringify(juniorName)}` : " with no junior_name"}.
-Use typology_counts for the pattern and cite concrete lesson cards as examples.`;
-}
 
 // backend/src/copy.ts
 var copy = {
@@ -77910,9 +77839,6 @@ var captureTraceParams = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
   submitted_by: external_exports.string().min(1),
-  submitted_by_role: external_exports.enum(["senior", "junior"]),
-  junior_name: external_exports.string().optional(),
-  senior_name: external_exports.string().optional(),
   playbook_ref: external_exports.string().optional(),
   playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
@@ -77931,9 +77857,7 @@ var saveExtractionParams = external_exports.object({
 var listLessonsParams = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
   typology: external_exports.string().optional(),
-  playbook_ref: external_exports.string().optional(),
-  junior_name: external_exports.string().optional(),
-  senior_name: external_exports.string().optional()
+  playbook_ref: external_exports.string().optional()
 });
 var reviewLessonParams = external_exports.object({
   lesson_id: external_exports.string().min(1),
@@ -77951,8 +77875,6 @@ var promoteLessonParams = external_exports.object({
   why_it_matters: external_exports.string().min(1).optional(),
   typology: external_exports.string().min(1).optional()
 });
-var askSeniorParams = external_exports.object({ question: external_exports.string().min(1), senior_name: external_exports.string().optional() });
-var askJuniorParams = external_exports.object({ junior_name: external_exports.string().optional() });
 function registerTools(server, ctxFactory = buildMcpContext) {
   const mcp = server;
   mcp.addTool({
@@ -78024,18 +77946,6 @@ function registerTools(server, ctxFactory = buildMcpContext) {
       const { lesson_id, ...payload } = args;
       return json(await requireLessonService(ctxFactory()).promote(lesson_id, payload));
     }
-  });
-  mcp.addTool({
-    name: "ask_senior_approach",
-    description: "Find reviewed lessons matching a junior question, optionally filtered to one senior.",
-    parameters: askSeniorParams,
-    execute: async (args) => json(await requireLessonService(ctxFactory()).askSeniorApproach(args.question, args.senior_name))
-  });
-  mcp.addTool({
-    name: "ask_junior_struggles",
-    description: "Find reviewed lessons for a junior, with category counts.",
-    parameters: askJuniorParams,
-    execute: async (args) => json(await requireLessonService(ctxFactory()).askJuniorStruggles(args.junior_name))
   });
 }
 function completeSetupHandler(ctx, args) {
