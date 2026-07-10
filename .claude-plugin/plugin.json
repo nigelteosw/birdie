@@ -1,6 +1,6 @@
 {
   "name": "birdie",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local-first mentorship capture for reviewed before/after edit lessons.",
   "mcpServers": {
     "birdie": {
