@@ -16,6 +16,7 @@ const setupParams = z
   .object({
     mode: z.enum(['local', 'remote']),
     server_url: z.string().url().optional(),
+    user_name: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.mode === 'remote' && !data.server_url) {
@@ -33,6 +34,7 @@ const updateSettingsParams = z
   .object({
     mode: z.enum(['local', 'remote']).optional(),
     server_url: z.string().url().optional(),
+    user_name: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.mode === 'remote' && !data.server_url) {
@@ -46,6 +48,13 @@ const updateSettingsParams = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'mode is required when server_url is provided',
+        path: ['mode'],
+      });
+    }
+    if (!data.mode && !data.server_url && !data.user_name) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide at least mode or user_name to update.',
         path: ['mode'],
       });
     }
@@ -90,26 +99,33 @@ const promoteLessonParams = z.object({
   why_it_matters: z.string().min(1).optional(),
   typology: z.string().min(1).optional(),
 });
+const askLessonParams = z.object({
+  question: z.string().min(1),
+  person: z.string().min(1).optional(),
+  typology: z.string().min(1).optional(),
+});
 
 export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = buildMcpContext): void {
   const mcp = server as any;
 
   mcp.addTool({
     name: 'complete_setup',
-    description: "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server.",
+    description:
+      "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server. Pass user_name so Birdie remembers who's chatting without asking again.",
     parameters: setupParams,
     execute: async (args: z.infer<typeof setupParams>) => json(completeSetupHandler(ctxFactory(), args)),
   });
   mcp.addTool({
     name: 'get_birdie_settings',
-    description: 'Show whether Birdie is configured, which mode it uses, the shared server URL if any, and local file paths.',
+    description:
+      'Show whether Birdie is configured, which mode it uses, the shared server URL if any, the remembered user_name, and local file paths.',
     parameters: emptyParams,
     execute: async () => json(getBirdieSettingsHandler()),
   });
   mcp.addTool({
     name: 'update_birdie_settings',
     description:
-      'Switch Birdie between local storage and a shared remote server. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
+      'Switch Birdie between local storage and a shared remote server, and/or update the remembered user_name. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
     parameters: updateSettingsParams,
     execute: async (args: z.infer<typeof updateSettingsParams>) => json(updateBirdieSettingsHandler(args)),
   });
@@ -191,11 +207,28 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
       return json(await requireLessonService(ctxFactory()).promote(lesson_id, payload));
     },
   });
+  mcp.addTool({
+    name: 'ask_lesson',
+    description:
+      'Find promoted lessons relevant to a question, optionally scoped to one person or category, for you to synthesize an answer from.',
+    parameters: askLessonParams,
+    execute: async (args: z.infer<typeof askLessonParams>) =>
+      json(
+        await requireLessonService(ctxFactory()).list({
+          status: 'promoted',
+          submitted_by: args.person,
+          typology: args.typology,
+          q: args.question,
+        })
+      ),
+  });
 }
 
 export function completeSetupHandler(ctx: McpContext, args: z.infer<typeof setupParams>): BirdieConfig {
   const config: BirdieConfig =
-    args.mode === 'remote' ? { mode: 'remote', server_url: args.server_url! } : { mode: 'local' };
+    args.mode === 'remote'
+      ? { mode: 'remote', server_url: args.server_url!, user_name: args.user_name }
+      : { mode: 'local', user_name: args.user_name };
   return ctx.completeSetup(config);
 }
 
@@ -204,9 +237,14 @@ export function getBirdieSettingsHandler() {
 }
 
 export function updateBirdieSettingsHandler(args: z.infer<typeof updateSettingsParams>): BirdieConfig {
-  if (!args.mode) throw new Error('mode is required.');
+  const current = readSettingsSummary();
+  const mode = args.mode ?? (current.mode === 'unconfigured' ? undefined : current.mode);
+  if (!mode) throw new Error('mode is required.');
+  const user_name = args.user_name ?? current.user_name;
   const config: BirdieConfig =
-    args.mode === 'remote' ? { mode: 'remote', server_url: args.server_url! } : { mode: 'local' };
+    mode === 'remote'
+      ? { mode: 'remote', server_url: args.server_url ?? current.server_url!, user_name }
+      : { mode: 'local', user_name };
   if (config.mode === 'local') {
     const db = openDb(readSettingsSummary().dbPath);
     db.close();

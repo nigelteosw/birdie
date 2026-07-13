@@ -16,6 +16,7 @@ export interface SettingsSummary {
   configured: boolean;
   mode: 'local' | 'remote' | 'unconfigured';
   server_url?: string;
+  user_name?: string;
   configPath: string;
   birdieDir: string;
   dbPath: string;
@@ -75,6 +76,7 @@ export function readSettingsSummary(): SettingsSummary {
     configured: !state.firstRun && Boolean(state.config),
     mode,
     server_url: state.config?.mode === 'remote' ? state.config.server_url : undefined,
+    user_name: state.config?.user_name,
     configPath: state.configPath,
     birdieDir: state.birdieDir,
     dbPath: state.dbPath,
@@ -86,10 +88,11 @@ export function readSettingsSummary(): SettingsSummary {
 export function writeConfig(config: BirdieConfig): BirdieConfig {
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });
+  const userName = config.user_name?.trim() ? { user_name: config.user_name.trim() } : {};
   const normalized =
     config.mode === 'remote'
-      ? { mode: 'remote' as const, server_url: config.server_url.replace(/\/+$/, '') }
-      : { mode: 'local' as const };
+      ? { mode: 'remote' as const, server_url: config.server_url.replace(/\/+$/, ''), ...userName }
+      : { mode: 'local' as const, ...userName };
   writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`);
   if (normalized.mode === 'local') {
     mkdirSync(dirname(localDbPath()), { recursive: true });

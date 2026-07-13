@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SqliteDb } from '../db.js';
+import { ftsAvailable, type SqliteDb } from '../db.js';
 import type { LessonEdit, LessonFilters, LessonWithTrace, NewExtraction, PromotePayload } from '../types.js';
 
 interface LessonRow extends Omit<LessonWithTrace, 'quote_verified'> {
@@ -11,7 +11,11 @@ function rowToLesson(row: LessonRow): LessonWithTrace {
 }
 
 export class LessonRepository {
-  constructor(private db: SqliteDb) {}
+  private readonly ftsAvailable: boolean;
+
+  constructor(private db: SqliteDb) {
+    this.ftsAvailable = ftsAvailable(db);
+  }
 
   create(input: NewExtraction & { quote_verified: boolean }): LessonWithTrace {
     const id = randomUUID();
@@ -35,6 +39,7 @@ export class LessonRepository {
         input.playbook_alignment ?? null,
         input.playbook_note ?? null
       );
+    this.syncFts(id, input.quote, input.what_changed, input.why_it_matters);
     return this.getById(id)!;
   }
 
@@ -49,7 +54,7 @@ export class LessonRepository {
   }
 
   list(filters: LessonFilters): LessonWithTrace[] {
-    const { where, params } = filterWhere(filters);
+    const { where, params } = filterWhere(filters, this.ftsAvailable);
     const rows = this.db
       .prepare(`${lessonSelect()} ${where} ORDER BY l.created_at DESC`)
       .all(...params) as LessonRow[];
@@ -86,6 +91,7 @@ export class LessonRepository {
         new Date().toISOString(),
         id
       );
+    this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id)!;
   }
 
@@ -125,7 +131,16 @@ export class LessonRepository {
         now,
         id
       );
+    this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id)!;
+  }
+
+  private syncFts(id: string, quote: string, whatChanged: string, whyItMatters: string): void {
+    if (!this.ftsAvailable) return;
+    this.db.prepare('DELETE FROM lessons_fts WHERE id = ?').run(id);
+    this.db
+      .prepare('INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters) VALUES (?, ?, ?, ?)')
+      .run(id, quote, whatChanged, whyItMatters);
   }
 }
 
@@ -135,7 +150,7 @@ function lessonSelect(): string {
           JOIN traces t ON t.id = l.trace_id`;
 }
 
-function filterWhere(filters: LessonFilters): { where: string; params: string[] } {
+function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: string; params: string[] } {
   const clauses: string[] = [];
   const params: string[] = [];
   for (const key of ['status', 'typology', 'playbook_ref', 'submitted_by'] as const) {
@@ -151,15 +166,25 @@ function filterWhere(filters: LessonFilters): { where: string; params: string[] 
       .split(/\W+/)
       .filter((word) => word.length > 2);
     if (keywords.length > 0) {
-      clauses.push(
-        `(${keywords
-          .map((keyword) => {
-            const value = `%${keyword}%`;
-            params.push(value, value, value);
-            return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
-          })
-          .join(' OR ')})`
-      );
+      if (ftsAvailable) {
+        // FTS5 tokenizes on word boundaries, so quoting each keyword treats it
+        // as a literal token and sidesteps MATCH's query-syntax operators
+        // (e.g. a keyword containing "-" or ":" would otherwise be parsed as
+        // a column filter or NOT clause instead of matched literally).
+        const match = keywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(' OR ');
+        clauses.push('l.id IN (SELECT id FROM lessons_fts WHERE lessons_fts MATCH ?)');
+        params.push(match);
+      } else {
+        clauses.push(
+          `(${keywords
+            .map((keyword) => {
+              const value = `%${keyword}%`;
+              params.push(value, value, value);
+              return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
+            })
+            .join(' OR ')})`
+        );
+      }
     }
   }
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };

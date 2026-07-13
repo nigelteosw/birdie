@@ -51,6 +51,17 @@ describe('config', () => {
     expect(readConfigState().firstRun).toBe(true);
   });
 
+  it('remembers user_name across writes', () => {
+    writeConfig({ mode: 'local', user_name: 'Nigel' });
+    expect(readConfigState().config).toEqual({ mode: 'local', user_name: 'Nigel' });
+    expect(readSettingsSummary()).toMatchObject({ user_name: 'Nigel' });
+  });
+
+  it('omits user_name when not provided, unchanged from before', () => {
+    writeConfig({ mode: 'local' });
+    expect(readConfigState().config).toEqual({ mode: 'local' });
+  });
+
   it('saves a domain profile', () => {
     const result = saveDomainProfile('# Domain\nTest');
     expect(readFileSync(result.path, 'utf-8')).toContain('# Domain');

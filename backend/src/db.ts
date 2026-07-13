@@ -79,6 +79,28 @@ function migrate(db: SqliteDb): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
   dropLegacyRoleColumns(db);
+  setUpLessonsFts(db);
+}
+
+// Best-effort keyword search index. Not every SQLite build has FTS5 compiled
+// in, so this degrades silently to the plain LIKE scan in lessonRepository
+// rather than breaking setup on an unsupported build.
+export function ftsAvailable(db: SqliteDb): boolean {
+  const rows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lessons_fts'`).all();
+  return rows.length > 0;
+}
+
+function setUpLessonsFts(db: SqliteDb): void {
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS lessons_fts USING fts5(id UNINDEXED, quote, what_changed, why_it_matters);`);
+    db.exec(`
+      INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters)
+      SELECT id, quote, what_changed, why_it_matters FROM lessons
+      WHERE id NOT IN (SELECT id FROM lessons_fts);
+    `);
+  } catch {
+    // FTS5 not available on this SQLite build — q filtering falls back to LIKE.
+  }
 }
 
 function dropLegacyRoleColumns(db: SqliteDb): void {

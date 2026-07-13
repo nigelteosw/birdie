@@ -65222,6 +65222,22 @@ function migrate(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
   dropLegacyRoleColumns(db);
+  setUpLessonsFts(db);
+}
+function ftsAvailable(db) {
+  const rows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lessons_fts'`).all();
+  return rows.length > 0;
+}
+function setUpLessonsFts(db) {
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS lessons_fts USING fts5(id UNINDEXED, quote, what_changed, why_it_matters);`);
+    db.exec(`
+      INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters)
+      SELECT id, quote, what_changed, why_it_matters FROM lessons
+      WHERE id NOT IN (SELECT id FROM lessons_fts);
+    `);
+  } catch {
+  }
 }
 function dropLegacyRoleColumns(db) {
   const columns = db.prepare("PRAGMA table_info(traces)").all();
@@ -65324,6 +65340,7 @@ function readSettingsSummary() {
     configured: !state.firstRun && Boolean(state.config),
     mode,
     server_url: state.config?.mode === "remote" ? state.config.server_url : void 0,
+    user_name: state.config?.user_name,
     configPath: state.configPath,
     birdieDir: state.birdieDir,
     dbPath: state.dbPath,
@@ -65334,7 +65351,8 @@ function readSettingsSummary() {
 function writeConfig(config2) {
   const path = configPath();
   mkdirSync2(dirname2(path), { recursive: true });
-  const normalized = config2.mode === "remote" ? { mode: "remote", server_url: config2.server_url.replace(/\/+$/, "") } : { mode: "local" };
+  const userName = config2.user_name?.trim() ? { user_name: config2.user_name.trim() } : {};
+  const normalized = config2.mode === "remote" ? { mode: "remote", server_url: config2.server_url.replace(/\/+$/, ""), ...userName } : { mode: "local", ...userName };
   writeFileSync(path, `${JSON.stringify(normalized, null, 2)}
 `);
   if (normalized.mode === "local") {
@@ -65369,7 +65387,9 @@ function rowToLesson(row) {
 var LessonRepository = class {
   constructor(db) {
     this.db = db;
+    this.ftsAvailable = ftsAvailable(db);
   }
+  ftsAvailable;
   create(input) {
     const id = randomUUID();
     this.db.prepare(
@@ -65390,6 +65410,7 @@ var LessonRepository = class {
       input.playbook_alignment ?? null,
       input.playbook_note ?? null
     );
+    this.syncFts(id, input.quote, input.what_changed, input.why_it_matters);
     return this.getById(id);
   }
   getById(id) {
@@ -65401,7 +65422,7 @@ var LessonRepository = class {
     return row ? rowToLesson(row) : void 0;
   }
   list(filters) {
-    const { where, params } = filterWhere(filters);
+    const { where, params } = filterWhere(filters, this.ftsAvailable);
     const rows = this.db.prepare(`${lessonSelect()} ${where} ORDER BY l.created_at DESC`).all(...params);
     return rows.map(rowToLesson);
   }
@@ -65433,6 +65454,7 @@ var LessonRepository = class {
       (/* @__PURE__ */ new Date()).toISOString(),
       id
     );
+    this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id);
   }
   promote(id, payload) {
@@ -65469,7 +65491,13 @@ var LessonRepository = class {
       now,
       id
     );
+    this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id);
+  }
+  syncFts(id, quote, whatChanged, whyItMatters) {
+    if (!this.ftsAvailable) return;
+    this.db.prepare("DELETE FROM lessons_fts WHERE id = ?").run(id);
+    this.db.prepare("INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters) VALUES (?, ?, ?, ?)").run(id, quote, whatChanged, whyItMatters);
   }
 };
 function lessonSelect() {
@@ -65477,7 +65505,7 @@ function lessonSelect() {
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id`;
 }
-function filterWhere(filters) {
+function filterWhere(filters, ftsAvailable2) {
   const clauses = [];
   const params = [];
   for (const key of ["status", "typology", "playbook_ref", "submitted_by"]) {
@@ -65490,13 +65518,19 @@ function filterWhere(filters) {
   if (filters.q) {
     const keywords = filters.q.toLowerCase().split(/\W+/).filter((word) => word.length > 2);
     if (keywords.length > 0) {
-      clauses.push(
-        `(${keywords.map((keyword) => {
-          const value = `%${keyword}%`;
-          params.push(value, value, value);
-          return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
-        }).join(" OR ")})`
-      );
+      if (ftsAvailable2) {
+        const match = keywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
+        clauses.push("l.id IN (SELECT id FROM lessons_fts WHERE lessons_fts MATCH ?)");
+        params.push(match);
+      } else {
+        clauses.push(
+          `(${keywords.map((keyword) => {
+            const value = `%${keyword}%`;
+            params.push(value, value, value);
+            return `(lower(l.quote) LIKE ? OR lower(l.what_changed) LIKE ? OR lower(l.why_it_matters) LIKE ?)`;
+          }).join(" OR ")})`
+        );
+      }
     }
   }
   return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
@@ -77803,14 +77837,23 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
     arguments: [{ name: "trace_id", description: "The example to extract from", required: true }],
     load: async (args) => buildExtractLessonPrompt(ctxFactory().domainProfile, args.trace_id)
   });
+  mcp.addPrompt({
+    name: "ask-lesson",
+    description: "Answer a question from the team's promoted lessons, optionally scoped to one person.",
+    arguments: [
+      { name: "question", description: "What the user wants to know", required: true },
+      { name: "person", description: "Only consider lessons submitted by this person", required: false }
+    ],
+    load: async (args) => buildAskLessonPrompt(args.question, args.person)
+  });
 }
 function buildSetupPrompt(profile) {
   return `Birdie needs a one-time setup.
 
-Ask the user, in plain language, whether they already have a Birdie server URL from their team.
+Ask the user, in plain language, whether they already have a Birdie server URL from their team, and what their own name is (so Birdie can remember it and skip asking again later).
 
-If they provide a URL, call complete_setup with mode="remote" and server_url set to that URL.
-If they do not have one, call complete_setup with mode="local".
+If they provide a URL, call complete_setup with mode="remote", server_url set to that URL, and user_name set to their name.
+If they do not have one, call complete_setup with mode="local" and user_name set to their name.
 
 Then offer to customize their team's categories. If they want to customize, ask what field they are in and what kinds of edits matter. Turn their answer into this markdown shape and call save_domain_profile:
 
@@ -77830,13 +77873,14 @@ function buildConfigurePrompt() {
   return `Help the user inspect or change Birdie settings.
 
 Steps:
-1. Call get_birdie_settings and summarize the current mode, shared server URL if present, review queue URL, and config/domain file paths.
+1. Call get_birdie_settings and summarize the current mode, shared server URL if present, remembered user_name if present, review queue URL, and config/domain file paths.
 2. Ask what they want to change only if their request is ambiguous.
 3. To switch to local storage, call update_birdie_settings with mode="local".
 4. To connect to a shared local or remote backend, call update_birdie_settings with mode="remote" and server_url set to the provided URL.
-5. To review categories, call get_domain_profile.
-6. To change categories, ask for the domain and what edits matter, then write a markdown profile with # Domain, # Typology, and # What counts as mentorship-worthy, and call save_domain_profile.
-7. If something looks broken, call birdie_doctor and explain the failing check in plain language.`;
+5. To update their remembered name, call update_birdie_settings with just user_name set \u2014 mode is not required for a name-only change.
+6. To review categories, call get_domain_profile.
+7. To change categories, ask for the domain and what edits matter, then write a markdown profile with # Domain, # Typology, and # What counts as mentorship-worthy, and call save_domain_profile.
+8. If something looks broken, call birdie_doctor and explain the failing check in plain language.`;
 }
 function buildExtractLessonPrompt(profile, traceId) {
   return `Extract a mentorship lesson from trace_id="${traceId}".
@@ -77850,6 +77894,14 @@ Steps:
 4. The quote must be copied verbatim from before_text. Birdie checks this in code.
 5. If the edit differs from the playbook, say that directly in playbook_note.
 6. Call save_extraction.`;
+}
+function buildAskLessonPrompt(question, person) {
+  return `Answer this question using Birdie's promoted lessons: "${question}"${person ? ` (scoped to lessons submitted by ${person})` : ""}.
+
+Steps:
+1. Call ask_lesson with question="${question}"${person ? ` and person="${person}"` : ""}.
+2. Synthesize an answer strictly from the returned lesson cards (quote / what_changed / why_it_matters).
+3. If nothing relevant comes back, say so plainly instead of inventing an answer.`;
 }
 
 // backend/src/copy.ts
@@ -77866,7 +77918,8 @@ var copy = {
 // backend/src/mcp/tools.ts
 var setupParams = external_exports.object({
   mode: external_exports.enum(["local", "remote"]),
-  server_url: external_exports.string().url().optional()
+  server_url: external_exports.string().url().optional(),
+  user_name: external_exports.string().min(1).optional()
 }).superRefine((data, ctx) => {
   if (data.mode === "remote" && !data.server_url) {
     ctx.addIssue({
@@ -77880,7 +77933,8 @@ var domainProfileParams = external_exports.object({ content: external_exports.st
 var emptyParams = external_exports.object({});
 var updateSettingsParams = external_exports.object({
   mode: external_exports.enum(["local", "remote"]).optional(),
-  server_url: external_exports.string().url().optional()
+  server_url: external_exports.string().url().optional(),
+  user_name: external_exports.string().min(1).optional()
 }).superRefine((data, ctx) => {
   if (data.mode === "remote" && !data.server_url) {
     ctx.addIssue({
@@ -77893,6 +77947,13 @@ var updateSettingsParams = external_exports.object({
     ctx.addIssue({
       code: external_exports.ZodIssueCode.custom,
       message: "mode is required when server_url is provided",
+      path: ["mode"]
+    });
+  }
+  if (!data.mode && !data.server_url && !data.user_name) {
+    ctx.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      message: "Provide at least mode or user_name to update.",
       path: ["mode"]
     });
   }
@@ -77937,23 +77998,28 @@ var promoteLessonParams = external_exports.object({
   why_it_matters: external_exports.string().min(1).optional(),
   typology: external_exports.string().min(1).optional()
 });
+var askLessonParams = external_exports.object({
+  question: external_exports.string().min(1),
+  person: external_exports.string().min(1).optional(),
+  typology: external_exports.string().min(1).optional()
+});
 function registerTools(server, ctxFactory = buildMcpContext) {
   const mcp = server;
   mcp.addTool({
     name: "complete_setup",
-    description: "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server.",
+    description: "Finish Birdie's first-run setup by choosing local storage or a shared Birdie server. Pass user_name so Birdie remembers who's chatting without asking again.",
     parameters: setupParams,
     execute: async (args) => json(completeSetupHandler(ctxFactory(), args))
   });
   mcp.addTool({
     name: "get_birdie_settings",
-    description: "Show whether Birdie is configured, which mode it uses, the shared server URL if any, and local file paths.",
+    description: "Show whether Birdie is configured, which mode it uses, the shared server URL if any, the remembered user_name, and local file paths.",
     parameters: emptyParams,
     execute: async () => json(getBirdieSettingsHandler())
   });
   mcp.addTool({
     name: "update_birdie_settings",
-    description: 'Switch Birdie between local storage and a shared remote server. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
+    description: 'Switch Birdie between local storage and a shared remote server, and/or update the remembered user_name. Use mode="local" for local storage or mode="remote" with server_url for a shared Birdie backend.',
     parameters: updateSettingsParams,
     execute: async (args) => json(updateBirdieSettingsHandler(args))
   });
@@ -78033,17 +78099,33 @@ function registerTools(server, ctxFactory = buildMcpContext) {
       return json(await requireLessonService(ctxFactory()).promote(lesson_id, payload));
     }
   });
+  mcp.addTool({
+    name: "ask_lesson",
+    description: "Find promoted lessons relevant to a question, optionally scoped to one person or category, for you to synthesize an answer from.",
+    parameters: askLessonParams,
+    execute: async (args) => json(
+      await requireLessonService(ctxFactory()).list({
+        status: "promoted",
+        submitted_by: args.person,
+        typology: args.typology,
+        q: args.question
+      })
+    )
+  });
 }
 function completeSetupHandler(ctx, args) {
-  const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url } : { mode: "local" };
+  const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url, user_name: args.user_name } : { mode: "local", user_name: args.user_name };
   return ctx.completeSetup(config2);
 }
 function getBirdieSettingsHandler() {
   return readSettingsSummary();
 }
 function updateBirdieSettingsHandler(args) {
-  if (!args.mode) throw new Error("mode is required.");
-  const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url } : { mode: "local" };
+  const current = readSettingsSummary();
+  const mode = args.mode ?? (current.mode === "unconfigured" ? void 0 : current.mode);
+  if (!mode) throw new Error("mode is required.");
+  const user_name = args.user_name ?? current.user_name;
+  const config2 = mode === "remote" ? { mode: "remote", server_url: args.server_url ?? current.server_url, user_name } : { mode: "local", user_name };
   if (config2.mode === "local") {
     const db = openDb(readSettingsSummary().dbPath);
     db.close();

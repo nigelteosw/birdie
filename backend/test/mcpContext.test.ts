@@ -54,6 +54,25 @@ describe('mcp context setup', () => {
     expect(readConfigState().config).toEqual({ mode: 'remote', server_url: 'https://birdie.example.com' });
   });
 
+  it('remembers user_name from complete_setup', () => {
+    completeSetupHandler(buildMcpContext(), { mode: 'local', user_name: 'Nigel' });
+    expect(getBirdieSettingsHandler()).toMatchObject({ mode: 'local', user_name: 'Nigel' });
+  });
+
+  it('updates just user_name without requiring mode, preserving the current mode', () => {
+    completeSetupHandler(buildMcpContext(), { mode: 'remote', server_url: 'https://birdie.example.com' });
+    updateBirdieSettingsHandler({ user_name: 'Nigel' });
+    expect(getBirdieSettingsHandler()).toMatchObject({
+      mode: 'remote',
+      server_url: 'https://birdie.example.com',
+      user_name: 'Nigel',
+    });
+  });
+
+  it('rejects update_birdie_settings with nothing to change', () => {
+    expect(() => updateBirdieSettingsHandler({})).toThrow();
+  });
+
   it('reads domain profile from MCP tools', () => {
     saveDomainProfile('# Domain\nEngineering\n\n# Typology\n- design_feedback: Feedback on design.\n');
     expect(getDomainProfileHandler()).toMatchObject({

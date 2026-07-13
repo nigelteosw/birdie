@@ -38,7 +38,10 @@ Install Birdie from GitHub — no `bun install`, no cloning, nothing to run in a
    - Ask it to capture a before/after edit as a mentorship example.
    - Ask it to extract a lesson from the captured example.
    - Ask it to review or promote pending lessons.
+   - Ask it how a specific person would approach something ("how would Sarah handle an uncapped indemnity clause?") — it checks the promoted lesson pool via `ask_lesson` and answers from what it finds, unprompted.
    - Birdie will offer the review queue link on its own whenever lessons are pending — it starts the local server on demand and drops a `127.0.0.1` URL into the reply, no need to ask for it.
+
+During setup, Birdie also asks for your own name and remembers it (`user_name` in `~/.birdie/config.json`), so it doesn't have to ask again in later conversations — it's used as the default for who's capturing an edit, and to tell you apart from a named person you're asking about.
 
 No shared server URL is needed for this setup. The plugin runs the MCP server locally and stores everything under `~/.birdie/`.
 

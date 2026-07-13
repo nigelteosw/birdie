@@ -49,4 +49,37 @@ describe('LessonRepository filters', () => {
     expect(byWhyItMatters).toHaveLength(1);
     expect(byWhyItMatters[0].submitted_by).toBe('Amir');
   });
+
+  it('keeps the keyword index in sync across edit and promote', () => {
+    const trace = traces.create({ submitted_by: 'Jane', before_text: 'draft text', after_text: 'after' });
+    const lesson = lessons.create({
+      trace_id: trace.id,
+      quote: 'draft text',
+      quote_verified: true,
+      what_changed: 'placeholder',
+      why_it_matters: 'placeholder',
+      typology: 'other',
+    });
+
+    // Not promoted yet, so it shouldn't surface in a promoted-only search.
+    expect(lessons.list({ status: 'promoted', q: 'liability' })).toHaveLength(0);
+
+    lessons.edit(lesson.id, { what_changed: 'renegotiated the cap', why_it_matters: 'liability cap negotiated down' });
+    lessons.promote(lesson.id, { reviewer: 'Sarah' });
+
+    const results = lessons.list({ status: 'promoted', q: 'liability' });
+    expect(results).toHaveLength(1);
+    expect(results[0].why_it_matters).toContain('liability cap');
+
+    // The stale "placeholder" text should no longer match after the edit replaced it.
+    expect(lessons.list({ status: 'promoted', q: 'placeholder' })).toHaveLength(0);
+  });
+
+  it('matches any one of several keywords, mirroring the previous LIKE-based OR search', () => {
+    createPromotedLesson('Jane', 'uncapped indemnity', 'Capped it.', 'Risk control.');
+    createPromotedLesson('Amir', 'vague notice period', 'Set 30 days.', 'Clarity on timing.');
+
+    const results = lessons.list({ status: 'promoted', q: 'indemnity timing' });
+    expect(results.map((lesson) => lesson.submitted_by).sort()).toEqual(['Amir', 'Jane']);
+  });
 });

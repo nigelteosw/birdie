@@ -98,5 +98,5 @@ export interface LessonServiceLike {
 }
 
 export type BirdieConfig =
-  | { mode: 'local' }
-  | { mode: 'remote'; server_url: string };
+  | { mode: 'local'; user_name?: string }
+  | { mode: 'remote'; server_url: string; user_name?: string };
