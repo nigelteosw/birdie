@@ -94,6 +94,26 @@ birdie domain show
 birdie domain set ./my-domain-profile.md
 ```
 
+## Docker / Hosting a Shared Server
+
+The `Dockerfile` at the repo root builds the REST API + web UI (`birdie web` — not the MCP stdio server, which always stays local to each Claude Code client) into a single container, for teams who want a real shared backend instead of a laptop running `bun run dev:backend -- web`.
+
+```bash
+docker compose up --build
+# → http://localhost:6677
+```
+
+Data lives at `/data/birdie.db` inside the container; `docker-compose.yml` mounts a named volume there so it survives restarts and rebuilds. Point remote clients at the container's URL the same way as any shared server (see "Sharing one local backend across assistants" above).
+
+The image is plain Docker with no platform-specific config, so any host that builds a Dockerfile and can attach a persistent volume works — Railway, Fly.io, Render, a bare VPS, etc. Two things every host needs to be told:
+
+- Mount a persistent volume at `/data` — without it, the SQLite file resets on every redeploy.
+- The server reads `PORT` from the environment (default `6677`) and exposes `GET /__birdie` as a health check, so wire those into whatever health-check/port config the host expects.
+
+**Vercel is not a fit for this image.** Vercel functions run on an ephemeral filesystem with no persistent disk, so a file-backed SQLite database won't survive between invocations or deploys. Use a host that runs a persistent container with an attached volume instead.
+
+**Before exposing this publicly:** the REST API has no authentication — anyone who can reach the URL can read, create, and promote lessons. That's fine for `127.0.0.1`/LAN/tunnel use, but a public Railway URL should sit behind a proxy auth layer (e.g. Railway's built-in access control, or a reverse proxy adding a shared secret) until the API itself gains an auth mechanism.
+
 ## GitHub Pages Docs
 
 This repo includes a static documentation site in `docs/`. To publish it with GitHub Pages:

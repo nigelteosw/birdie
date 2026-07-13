@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+dist
+**/dist
+data
+.env
+.git
+.gitignore
+*.tsbuildinfo
+docs
+.claude
+.claude-plugin
+bin
+backend/test
