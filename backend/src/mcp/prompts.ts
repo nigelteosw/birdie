@@ -8,7 +8,7 @@ export function registerPrompts(server: FastMCP, ctxFactory: () => McpContext = 
     name: 'setup-birdie',
     description: 'Guide a first-time user through local or shared-server setup and optional category setup.',
     arguments: [],
-    load: async () => buildSetupPrompt(ctxFactory().domainProfile),
+    load: async () => buildSetupPrompt(await ctxFactory().getDomainProfile()),
   });
   mcp.addPrompt({
     name: 'configure-birdie',
@@ -20,7 +20,7 @@ export function registerPrompts(server: FastMCP, ctxFactory: () => McpContext = 
     name: 'extract-lesson',
     description: 'Extract a mentorship lesson from a captured example.',
     arguments: [{ name: 'trace_id', description: 'The example to extract from', required: true }],
-    load: async (args: { trace_id: string }) => buildExtractLessonPrompt(ctxFactory().domainProfile, args.trace_id),
+    load: async (args: { trace_id: string }) => buildExtractLessonPrompt(await ctxFactory().getDomainProfile(), args.trace_id),
   });
   mcp.addPrompt({
     name: 'ask-lesson',

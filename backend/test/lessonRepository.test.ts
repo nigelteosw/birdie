@@ -82,4 +82,13 @@ describe('LessonRepository filters', () => {
     const results = lessons.list({ status: 'promoted', q: 'indemnity timing' });
     expect(results.map((lesson) => lesson.submitted_by).sort()).toEqual(['Amir', 'Jane']);
   });
+
+  it('bounds unpaginated lists and honours an explicit limit', () => {
+    for (let index = 0; index < 101; index += 1) {
+      createPromotedLesson(`Person ${index}`, `term ${index}`, 'Changed it.', 'Reason.');
+    }
+
+    expect(lessons.list({ status: 'promoted' })).toHaveLength(100);
+    expect(lessons.list({ status: 'promoted', limit: 3 })).toHaveLength(3);
+  });
 });

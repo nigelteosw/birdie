@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { RemoteLessonService } from '../src/services/remoteLessonService.js';
 import { RemoteTraceService } from '../src/services/remoteTraceService.js';
+import { RemoteDomainService } from '../src/services/remoteDomainService.js';
 
 describe('remote services', () => {
   const oldFetch = globalThis.fetch;
@@ -51,9 +52,24 @@ describe('remote services', () => {
       'POST http://birdie.test/lessons/lesson-1/promote',
     ]);
   });
+
+  it('reads and updates the shared domain profile', async () => {
+    const domain = new RemoteDomainService('http://birdie.test');
+    expect(await domain.get()).toMatchObject({ typology_categories: ['engineering'] });
+    expect(await domain.save('# Domain\nEngineering\n\n# Typology\n- engineering: Reviews.')).toMatchObject({
+      typology_categories: ['engineering'],
+    });
+    expect(calls.map((call) => `${call.init?.method ?? 'GET'} ${call.url}`)).toEqual([
+      'GET http://birdie.test/domain',
+      'PUT http://birdie.test/domain',
+    ]);
+  });
 });
 
 function responseFor(url: string, init?: RequestInit): unknown {
+  if (url.endsWith('/domain')) {
+    return { content: '# Domain\nEngineering\n\n# Typology\n- engineering: Reviews.', typology_categories: ['engineering'] };
+  }
   if (url.includes('/lessons') && !url.includes('/promote')) return [];
   if (url.includes('/traces') && init?.method === 'POST' && !url.includes('/extract')) {
     return { id: 'trace-1', status: 'captured' };

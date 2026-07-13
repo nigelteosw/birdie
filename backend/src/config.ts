@@ -101,7 +101,10 @@ export function writeConfig(config: BirdieConfig): BirdieConfig {
 }
 
 export function saveDomainProfile(content: string): { path: string } {
-  const path = domainProfilePath();
+  return saveDomainProfileAt(domainProfilePath(), content);
+}
+
+export function saveDomainProfileAt(path: string, content: string): { path: string } {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content.endsWith('\n') ? content : `${content}\n`);
   return { path };

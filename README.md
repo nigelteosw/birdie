@@ -16,7 +16,7 @@ bun run test
 
 ## Plugin Setup
 
-Install Birdie from GitHub — no `bun install`, no cloning, nothing to run in a terminal. The plugin ships as a precompiled, self-contained MCP server binary for macOS, Linux, and Windows; Node is only used to pick and launch the right one.
+Install Birdie from GitHub — no `bun install`, cloning, or separate server process. The plugin ships one bundled JavaScript MCP server and requires Node.js 22.13 or later in your `PATH` (it uses Node's built-in SQLite support). It is not a native binary.
 
 1. In Claude Code:
 
@@ -47,6 +47,19 @@ No shared server URL is needed for this setup. The plugin runs the MCP server lo
 
 The first MCP use should run the `setup-birdie` prompt, then `complete_setup` with either local mode or a shared server URL.
 
+### Other MCP clients
+
+Birdie is MCP-compatible; the Claude Code plugin is simply its packaged installation path. Any client that can launch a local stdio MCP server can use the same bundle after cloning or downloading this repository. Configure its MCP server with an absolute path:
+
+```json
+{
+  "command": "node",
+  "args": ["/absolute/path/to/birdie/bin/birdie.mjs", "mcp"]
+}
+```
+
+This covers local-capable Codex, ChatGPT, Gemini, and other MCP clients. A client that only accepts remote HTTP MCP servers cannot connect to Birdie's REST shared backend directly; it needs a local stdio bridge. The shared backend is for syncing data between those local MCP processes, not an MCP-over-HTTP endpoint.
+
 ### Starting and stopping the local server
 
 There's nothing to start or stop by hand. The REST+web server that backs the review queue starts itself, lazily, the first time it's needed in a session (whether you ask for it or Birdie offers it) — it binds to `127.0.0.1` and stays up for the rest of that session so repeat requests reuse the same URL instead of spawning a new server each time. It has no separate stop command: it goes away on its own when the MCP connection ends (closing the conversation, reloading the plugin, or quitting Claude Code). It is not a background daemon that persists across restarts.
@@ -56,6 +69,8 @@ By default it binds to a fixed port, `http://127.0.0.1:6677`, so you always know
 ### Switching between local and a shared team server
 
 Ask Birdie to switch at any point — e.g. "switch me to the team server at https://birdie.example.com" or "go back to local mode." That re-runs `complete_setup` with the new mode, which overwrites `~/.birdie/config.json`; since every tool call re-reads that config, the switch takes effect immediately on the next request, no restart needed. Switching doesn't migrate data: your local `~/.birdie/birdie.db` is left untouched (nothing is pushed to the shared server, nothing is deleted), so switching back to local later picks up right where that local db left off, and switching to remote just points new activity at the shared server instead.
+
+In local mode, the domain profile is stored under `~/.birdie/domain.md`. In shared-server mode, `get_domain_profile` and `save_domain_profile` read and update the server's profile instead, so every connected assistant uses the same categories immediately.
 
 You can also use the `configure-birdie` MCP prompt, or ask Birdie to show settings, run diagnostics, switch mode, or update categories. The plugin exposes `get_birdie_settings`, `update_birdie_settings`, `get_domain_profile`, `save_domain_profile`, and `birdie_doctor` for assistants that prefer direct tool calls.
 
@@ -152,7 +167,7 @@ git add bin/birdie.mjs
 - `GET /traces/:id`
 - `POST /traces/:id/skip`
 - `POST /traces/:id/extract`
-- `GET /lessons` — accepts `status`, `typology`, `playbook_ref`, `submitted_by`, and `q` (keyword search across quote/what_changed/why_it_matters) query params
+- `GET /lessons` — accepts `status`, `typology`, `playbook_ref`, `submitted_by`, `q`, and `limit` (1–100, default 100). Keyword results use FTS relevance when available.
 - `GET /lessons/:id`
 - `PATCH /lessons/:id`
 - `POST /lessons/:id/promote`

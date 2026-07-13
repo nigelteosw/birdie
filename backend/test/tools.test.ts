@@ -22,9 +22,9 @@ function fakeCtx(): McpContext {
     mode: 'local',
     traceService: local.traceService,
     lessonService: local.lessonService,
-    domainProfile: local.domainProfile,
     completeSetup: () => ({ mode: 'local' }),
-    saveDomainProfile: () => ({ path: '/nonexistent/domain.md' }),
+    getDomainProfile: async () => local.domainProfile,
+    saveDomainProfile: async () => ({ path: '/nonexistent/domain.md' }),
     openReviewQueue: async () => ({ url: 'http://127.0.0.1:6677' }),
   };
 }
@@ -56,5 +56,31 @@ describe('ask_lesson tool', () => {
 
     const noMatch = JSON.parse(await askLesson.execute({ question: 'indemnity', person: 'Amir' }));
     expect(noMatch).toHaveLength(0);
+  });
+
+  it('keeps short technical terms searchable instead of returning the entire pool', async () => {
+    const ctx = fakeCtx();
+    const server = new FakeServer();
+    registerTools(server as unknown as Parameters<typeof registerTools>[0], () => ctx);
+
+    for (const [submitted_by, before_text] of [
+      ['Ada', 'UI alignment'],
+      ['Grace', 'database transaction'],
+    ]) {
+      const trace = await ctx.traceService!.capture({ submitted_by, before_text, after_text: 'after' });
+      const lesson = await ctx.traceService!.extract({
+        trace_id: trace.id,
+        quote: before_text,
+        what_changed: 'Improved it.',
+        why_it_matters: 'Quality.',
+        typology: 'other',
+      });
+      await ctx.lessonService!.promote(lesson.id, { reviewer: 'Sarah' });
+    }
+
+    const askLesson = server.tools.get('ask_lesson')!;
+    const result = JSON.parse(await askLesson.execute({ question: 'UI' }));
+    expect(result).toHaveLength(1);
+    expect(result[0].submitted_by).toBe('Ada');
   });
 });

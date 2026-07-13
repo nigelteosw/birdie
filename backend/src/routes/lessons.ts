@@ -2,7 +2,14 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 
-const statusQuery = z.enum(['pending_review', 'rejected', 'promoted']).optional();
+const listQuery = z.object({
+  status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
+  typology: z.string().optional(),
+  playbook_ref: z.string().optional(),
+  submitted_by: z.string().optional(),
+  q: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
 const editBody = z.object({
   quote: z.string().min(1).optional(),
   what_changed: z.string().min(1).optional(),
@@ -22,15 +29,11 @@ export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
 
   router.get('/', (req, res) => {
-    const status = statusQuery.safeParse(req.query.status);
-    if (!status.success) return res.status(400).json({ error: status.error.message });
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     res.json(
       ctx.lessonService.list({
-        status: status.data,
-        typology: req.query.typology as string | undefined,
-        playbook_ref: req.query.playbook_ref as string | undefined,
-        submitted_by: req.query.submitted_by as string | undefined,
-        q: req.query.q as string | undefined,
+        ...parsed.data,
       })
     );
   });

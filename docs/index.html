@@ -31,7 +31,7 @@
           <p class="eyebrow">Local-first mentorship capture</p>
           <h1>Turn before/after edits into reviewed team lessons.</h1>
           <p class="lede">
-            Birdie is a Claude Code plugin and MCP server that captures real edits, lets the assistant extract
+            Birdie is a Claude Code plugin and standard MCP server that captures real edits, lets the assistant extract
             candidate lessons, keeps humans in the review loop, and answers questions from approved examples.
           </p>
           <div class="hero-actions">
@@ -53,7 +53,7 @@
           <article>
             <span class="number">01</span>
             <h3>Capture the edit</h3>
-            <p>Store the before text, after text, contributor names, role context, and optional playbook guidance.</p>
+            <p>Store the before text, after text, contributor name, and optional playbook guidance.</p>
           </article>
           <article>
             <span class="number">02</span>
@@ -77,7 +77,8 @@
           <div>
             <p>
               The published plugin ships with a bundled MCP server for macOS, Linux, and Windows. Plugin users do not
-              need to clone the repository, run <code>bun install</code>, or start a separate server.
+              need to clone the repository, run <code>bun install</code>, or start a separate server. It does require
+              Node.js 22.13 or later, which runs the bundled server.
             </p>
             <pre><code>/plugin marketplace add nigelteosw/birdie
 /plugin install birdie</code></pre>
@@ -90,6 +91,11 @@
             </p>
           </div>
         </div>
+        <p>
+          Other MCP clients that can launch local stdio commands can run the same bundle with
+          <code>node /absolute/path/to/birdie/bin/birdie.mjs mcp</code>. The REST shared backend syncs data between
+          those local processes; it is not an MCP-over-HTTP server.
+        </p>
       </section>
 
       <section class="content-section alt" aria-labelledby="local-mode">
@@ -111,7 +117,7 @@
           <article>
             <h3>Domain profile</h3>
             <code>~/.birdie/domain.md</code>
-            <p>Optionally customizes the domain, typology, and mentorship-worthy guidance.</p>
+            <p>Optionally customizes the domain, typology, and mentorship-worthy guidance. In shared mode, the profile lives on the server instead.</p>
           </article>
         </div>
       </section>
@@ -139,7 +145,7 @@
           </article>
           <article>
             <h3>4. Ask from reviewed examples</h3>
-            <p>Ask how a senior handled a similar situation, or ask what a junior is struggling with across promoted lessons.</p>
+            <p>Ask how a named person handled a similar situation. Birdie retrieves up to 12 relevant promoted lessons for the assistant to synthesize.</p>
           </article>
         </div>
       </section>
@@ -155,8 +161,8 @@
             <ul>
               <li><code>setup-birdie</code></li>
               <li><code>extract-lesson</code></li>
-              <li><code>ask-senior-approach</code></li>
-              <li><code>ask-junior-struggles</code></li>
+              <li><code>configure-birdie</code></li>
+              <li><code>ask-lesson</code></li>
             </ul>
           </article>
           <article>
@@ -169,6 +175,7 @@
               <li><code>save_extraction</code></li>
               <li><code>review_lesson</code></li>
               <li><code>promote_lesson</code></li>
+              <li><code>ask_lesson</code></li>
             </ul>
           </article>
           <article>
@@ -178,9 +185,10 @@
               <li><code>GET /traces</code></li>
               <li><code>POST /traces/:id/extract</code></li>
               <li><code>GET /lessons</code></li>
+              <li><code>PATCH /lessons/:id</code></li>
               <li><code>POST /lessons/:id/promote</code></li>
-              <li><code>GET /lessons/ask/senior-approach</code></li>
-              <li><code>GET /lessons/ask/junior-struggles</code></li>
+              <li><code>GET /domain</code></li>
+              <li><code>PUT /domain</code></li>
             </ul>
           </article>
         </div>

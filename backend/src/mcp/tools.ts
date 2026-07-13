@@ -3,9 +3,8 @@ import type { FastMCP } from 'fastmcp';
 import { buildMcpContext, type McpContext } from '../mcpContext.js';
 import type { BirdieConfig } from '../types.js';
 import { copy } from '../copy.js';
-import { loadDomainProfile } from '../domain.js';
 import { openDb } from '../db.js';
-import { domainProfilePath, readDomainProfileFile, readSettingsSummary, writeConfig } from '../config.js';
+import { readDomainProfileFile, readSettingsSummary, writeConfig } from '../config.js';
 
 export type McpContextFactory = () => McpContext;
 
@@ -82,6 +81,7 @@ const listLessonsParams = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
   typology: z.string().optional(),
   playbook_ref: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
 });
 const reviewLessonParams = z.object({
   lesson_id: z.string().min(1),
@@ -100,7 +100,11 @@ const promoteLessonParams = z.object({
   typology: z.string().min(1).optional(),
 });
 const askLessonParams = z.object({
-  question: z.string().min(1),
+  question: z
+    .string()
+    .trim()
+    .min(2)
+    .refine(hasSearchTerms, 'Ask a question containing at least one letter or number.'),
   person: z.string().min(1).optional(),
   typology: z.string().min(1).optional(),
 });
@@ -133,19 +137,19 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
     name: 'get_domain_profile',
     description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
     parameters: emptyParams,
-    execute: async () => json(getDomainProfileHandler()),
+    execute: async () => json(await getDomainProfileHandler(ctxFactory())),
   });
   mcp.addTool({
     name: 'birdie_doctor',
     description: 'Run quick setup checks and explain what the user should fix next.',
     parameters: emptyParams,
-    execute: async () => json(await birdieDoctorHandler()),
+    execute: async () => json(await birdieDoctorHandler(ctxFactory())),
   });
   mcp.addTool({
     name: 'save_domain_profile',
     description: "Save your team's categories and guidance after the setup interview.",
     parameters: domainProfileParams,
-    execute: async (args: z.infer<typeof domainProfileParams>) => json(saveDomainProfileHandler(ctxFactory(), args)),
+    execute: async (args: z.infer<typeof domainProfileParams>) => json(await saveDomainProfileHandler(ctxFactory(), args)),
   });
   mcp.addTool({
     name: 'open_review_queue',
@@ -219,6 +223,7 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
           submitted_by: args.person,
           typology: args.typology,
           q: args.question,
+          limit: 12,
         })
       ),
   });
@@ -252,18 +257,18 @@ export function updateBirdieSettingsHandler(args: z.infer<typeof updateSettingsP
   return writeConfig(config);
 }
 
-export function getDomainProfileHandler() {
-  const saved = readDomainProfileFile();
-  const loaded = loadDomainProfile(domainProfilePath());
+export async function getDomainProfileHandler(ctx: McpContext) {
+  const loaded = await ctx.getDomainProfile();
+  const saved = ctx.mode === 'remote' ? undefined : readDomainProfileFile();
   return {
-    path: saved.path,
-    customized: saved.customized,
-    content: saved.customized ? saved.content : loaded.raw,
+    path: ctx.mode === 'remote' ? `${readSettingsSummary().server_url}/domain` : saved!.path,
+    customized: ctx.mode === 'remote' || saved!.customized,
+    content: loaded.raw,
     typology_categories: loaded.typology_categories,
   };
 }
 
-export async function birdieDoctorHandler() {
+export async function birdieDoctorHandler(ctx: McpContext) {
   const settings = readSettingsSummary();
   const checks: Array<{ name: string; ok: boolean; detail: string }> = [
     {
@@ -289,17 +294,21 @@ export async function birdieDoctorHandler() {
     checks.push(await checkRemoteServer(settings.server_url));
   }
 
-  const domain = loadDomainProfile(domainProfilePath());
-  checks.push({
-    name: 'domain_profile',
-    ok: domain.typology_categories.length > 0,
-    detail: `${domain.typology_categories.length} typology categories available.`,
-  });
+  try {
+    const domain = await ctx.getDomainProfile();
+    checks.push({
+      name: 'domain_profile',
+      ok: domain.typology_categories.length > 0,
+      detail: `${domain.typology_categories.length} typology categories available.`,
+    });
+  } catch (err) {
+    checks.push({ name: 'domain_profile', ok: false, detail: errorMessage(err) });
+  }
 
   return { settings, checks, ok: checks.every((check) => check.ok) };
 }
 
-export function saveDomainProfileHandler(ctx: McpContext, args: z.infer<typeof domainProfileParams>): { path: string } {
+export function saveDomainProfileHandler(ctx: McpContext, args: z.infer<typeof domainProfileParams>): Promise<{ path: string }> {
   return ctx.saveDomainProfile(args.content);
 }
 
@@ -336,4 +345,8 @@ async function checkRemoteServer(serverUrl: string): Promise<{ name: string; ok:
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function hasSearchTerms(question: string): boolean {
+  return /[\p{L}\p{N}]/u.test(question);
 }

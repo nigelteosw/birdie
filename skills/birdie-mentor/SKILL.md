@@ -13,7 +13,7 @@ If Birdie says it is not set up, use the `setup-birdie` MCP prompt. Ask whether 
 
 Also ask the user's own name and pass it as `user_name` on that same `complete_setup` call (or `update_birdie_settings` later). Birdie remembers it in `~/.birdie/config.json`, so you don't need to ask again in future conversations — read it back any time via `get_birdie_settings` and use it as the default `submitted_by` when the user is capturing their own edit, or to tell "the user" apart from a named person they're asking about in `ask_lesson`.
 
-Offer to customize categories. If the user wants that, ask what field they work in and what kinds of edits matter, then call `save_domain_profile` with a markdown profile containing `# Domain`, `# Typology`, and `# What counts as mentorship-worthy`. If the domain profile still reads like the generic default (a legal-practice template), that's a sign no one has customized it yet — flag it and offer to fix it instead of assuming it fits.
+Offer to customize categories. If the user wants that, ask what field they work in and what kinds of edits matter, then call `save_domain_profile` with a markdown profile containing `# Domain`, `# Typology`, and `# What counts as mentorship-worthy`. In shared-server mode this updates the team's server profile for every connected assistant; in local mode it only updates that user's local profile. If the domain profile still reads like the generic default (a legal-practice template), that's a sign no one has customized it yet — flag it and offer to fix it instead of assuming it fits.
 
 ## Proactive Capture
 
@@ -34,7 +34,7 @@ Capture isn't the only proactive trigger — retrieval is the other half, and it
 - The user names a specific person and asks how they'd approach, handle, or think about something ("how would Sarah tackle an uncapped indemnity clause", "what would Amir say about this").
 - The user is about to start something that resembles a previously captured example (similar file, similar kind of change, similar problem) and a quick check could surface relevant prior guidance.
 
-Pass the user's question as `question`, the named person (if any) as `person`, and fold the returned lesson cards into your answer — synthesize from what comes back, and say plainly if nothing relevant was found rather than inventing an answer. This is the same division of labor as extraction: Birdie returns grounded data, you do the reasoning. If the user asks about themselves ("how did I handle this last time"), use the remembered `user_name` (see First Use) as `person`.
+Pass the user's question as `question`, the named person (if any) as `person`, and fold the returned lesson cards into your answer — synthesize from what comes back, and say plainly if nothing relevant was found rather than inventing an answer. Birdie returns at most 12 keyword matches (ranked when SQLite FTS is available), so keep the question specific when possible. This is the same division of labor as extraction: Birdie returns grounded data, you do the reasoning. If the user asks about themselves ("how did I handle this last time"), use the remembered `user_name` (see First Use) as `person`.
 
 ## Workflow
 

@@ -6,6 +6,7 @@ import { createServer } from './server.js';
 import { loadDomainProfile, type DomainProfile } from './domain.js';
 import { RemoteLessonService } from './services/remoteLessonService.js';
 import { RemoteTraceService } from './services/remoteTraceService.js';
+import { RemoteDomainService } from './services/remoteDomainService.js';
 import type { BirdieConfig, LessonServiceLike, TraceServiceLike } from './types.js';
 
 export interface McpContext {
@@ -13,9 +14,9 @@ export interface McpContext {
   mode: 'local' | 'remote' | 'unconfigured';
   traceService?: TraceServiceLike;
   lessonService?: LessonServiceLike;
-  domainProfile: DomainProfile;
   completeSetup(config: BirdieConfig): BirdieConfig;
-  saveDomainProfile(content: string): { path: string };
+  getDomainProfile(): Promise<DomainProfile>;
+  saveDomainProfile(content: string): Promise<{ path: string }>;
   openReviewQueue(): Promise<{ url: string }>;
 }
 
@@ -29,14 +30,18 @@ export function buildMcpContext(): McpContext {
   }
   if (state.config.mode === 'remote') {
     const serverUrl = state.config.server_url.replace(/\/+$/, '');
+    const domainService = new RemoteDomainService(serverUrl);
     return {
       firstRun: false,
       mode: 'remote',
       traceService: new RemoteTraceService(serverUrl),
       lessonService: new RemoteLessonService(serverUrl),
-      domainProfile: loadDomainProfile(domainProfilePath()),
       completeSetup,
-      saveDomainProfile,
+      getDomainProfile: () => domainService.get(),
+      saveDomainProfile: async (content) => {
+        await domainService.save(content);
+        return { path: `${serverUrl}/domain` };
+      },
       openReviewQueue: async () => ({ url: serverUrl }),
     };
   }
@@ -46,9 +51,9 @@ export function buildMcpContext(): McpContext {
     mode: 'local',
     traceService: local.traceService,
     lessonService: local.lessonService,
-    domainProfile: local.domainProfile,
     completeSetup,
-    saveDomainProfile,
+    getDomainProfile: async () => local.domainProfile,
+    saveDomainProfile: async (content) => saveDomainProfile(content),
     openReviewQueue: () => startLocalReviewQueue(local),
   };
 }
@@ -57,9 +62,9 @@ function unconfiguredContext(): McpContext {
   return {
     firstRun: true,
     mode: 'unconfigured',
-    domainProfile: loadDomainProfile(domainProfilePath()),
     completeSetup,
-    saveDomainProfile,
+    getDomainProfile: async () => loadDomainProfile(domainProfilePath()),
+    saveDomainProfile: async (content) => saveDomainProfile(content),
     openReviewQueue: async () => {
       throw new Error('Birdie is not set up yet. Use the setup-birdie prompt first.');
     },

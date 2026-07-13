@@ -73,9 +73,9 @@ describe('mcp context setup', () => {
     expect(() => updateBirdieSettingsHandler({})).toThrow();
   });
 
-  it('reads domain profile from MCP tools', () => {
+  it('reads domain profile from MCP tools', async () => {
     saveDomainProfile('# Domain\nEngineering\n\n# Typology\n- design_feedback: Feedback on design.\n');
-    expect(getDomainProfileHandler()).toMatchObject({
+    expect(await getDomainProfileHandler(buildMcpContext())).toMatchObject({
       customized: true,
       typology_categories: ['design_feedback'],
     });

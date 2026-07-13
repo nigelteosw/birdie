@@ -54,10 +54,13 @@ export class LessonRepository {
   }
 
   list(filters: LessonFilters): LessonWithTrace[] {
-    const { where, params } = filterWhere(filters, this.ftsAvailable);
+    const { where, params, usesFts } = filterWhere(filters, this.ftsAvailable);
+    const limit = normalizeLimit(filters.limit);
     const rows = this.db
-      .prepare(`${lessonSelect()} ${where} ORDER BY l.created_at DESC`)
-      .all(...params) as LessonRow[];
+      .prepare(
+        `${lessonSelect(usesFts)} ${where} ORDER BY ${usesFts ? 'bm25(lessons_fts), ' : ''}l.created_at DESC LIMIT ?`
+      )
+      .all(...params, limit) as LessonRow[];
     return rows.map(rowToLesson);
   }
 
@@ -144,15 +147,17 @@ export class LessonRepository {
   }
 }
 
-function lessonSelect(): string {
+function lessonSelect(usesFts = false): string {
   return `SELECT l.*, t.submitted_by, t.playbook_ref
           FROM lessons l
-          JOIN traces t ON t.id = l.trace_id`;
+          JOIN traces t ON t.id = l.trace_id
+          ${usesFts ? 'JOIN lessons_fts ON lessons_fts.id = l.id' : ''}`;
 }
 
-function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: string; params: string[] } {
+function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: string; params: string[]; usesFts: boolean } {
   const clauses: string[] = [];
   const params: string[] = [];
+  let usesFts = false;
   for (const key of ['status', 'typology', 'playbook_ref', 'submitted_by'] as const) {
     const value = filters[key];
     if (value) {
@@ -164,7 +169,7 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
     const keywords = filters.q
       .toLowerCase()
       .split(/\W+/)
-      .filter((word) => word.length > 2);
+      .filter(Boolean);
     if (keywords.length > 0) {
       if (ftsAvailable) {
         // FTS5 tokenizes on word boundaries, so quoting each keyword treats it
@@ -172,8 +177,9 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
         // (e.g. a keyword containing "-" or ":" would otherwise be parsed as
         // a column filter or NOT clause instead of matched literally).
         const match = keywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(' OR ');
-        clauses.push('l.id IN (SELECT id FROM lessons_fts WHERE lessons_fts MATCH ?)');
+        clauses.push('lessons_fts MATCH ?');
         params.push(match);
+        usesFts = true;
       } else {
         clauses.push(
           `(${keywords
@@ -187,5 +193,10 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
       }
     }
   }
-  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params, usesFts };
+}
+
+function normalizeLimit(value: number | undefined): number {
+  if (!value || !Number.isFinite(value)) return 100;
+  return Math.min(Math.max(Math.floor(value), 1), 100);
 }

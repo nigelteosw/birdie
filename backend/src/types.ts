@@ -80,6 +80,7 @@ export interface LessonFilters {
   playbook_ref?: string;
   submitted_by?: string;
   q?: string;
+  limit?: number;
 }
 
 export interface TraceServiceLike {

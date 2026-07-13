@@ -37,6 +37,10 @@ export class LessonService {
     });
   }
 
+  setDomainProfile(domainProfile: DomainProfile): void {
+    this.domainProfile = domainProfile;
+  }
+
   private requireLesson(id: string): LessonWithTrace {
     const lesson = this.lessons.getById(id);
     if (!lesson) throw new Error(`Lesson not found: ${id}`);

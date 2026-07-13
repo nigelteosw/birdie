@@ -49,6 +49,10 @@ export class TraceService {
     return lesson;
   }
 
+  setDomainProfile(domainProfile: DomainProfile): void {
+    this.domainProfile = domainProfile;
+  }
+
   private requireTrace(id: string): Trace {
     const trace = this.traces.getById(id);
     if (!trace) throw new Error(`Trace not found: ${id}`);

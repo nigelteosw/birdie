@@ -46,12 +46,13 @@ export interface LessonFilters {
   typology?: string;
   submitted_by?: string;
   q?: string;
+  limit?: number;
 }
 
 export function listLessons(filters: LessonFilters = {}): Promise<Lesson[]> {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value) search.set(key, value);
+    if (value !== undefined) search.set(key, String(value));
   }
   const text = search.toString();
   return get(`/lessons${text ? `?${text}` : ''}`);

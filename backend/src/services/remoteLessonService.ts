@@ -32,10 +32,10 @@ export class RemoteLessonService {
   }
 }
 
-function query(params: Record<string, string | undefined>): string {
+function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value) search.set(key, value);
+    if (value !== undefined) search.set(key, String(value));
   }
   const text = search.toString();
   return text ? `?${text}` : '';

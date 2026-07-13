@@ -65361,7 +65361,9 @@ function writeConfig(config2) {
   return normalized;
 }
 function saveDomainProfile(content) {
-  const path = domainProfilePath();
+  return saveDomainProfileAt(domainProfilePath(), content);
+}
+function saveDomainProfileAt(path, content) {
   mkdirSync2(dirname2(path), { recursive: true });
   writeFileSync(path, content.endsWith("\n") ? content : `${content}
 `);
@@ -65422,8 +65424,11 @@ var LessonRepository = class {
     return row ? rowToLesson(row) : void 0;
   }
   list(filters) {
-    const { where, params } = filterWhere(filters, this.ftsAvailable);
-    const rows = this.db.prepare(`${lessonSelect()} ${where} ORDER BY l.created_at DESC`).all(...params);
+    const { where, params, usesFts } = filterWhere(filters, this.ftsAvailable);
+    const limit = normalizeLimit(filters.limit);
+    const rows = this.db.prepare(
+      `${lessonSelect(usesFts)} ${where} ORDER BY ${usesFts ? "bm25(lessons_fts), " : ""}l.created_at DESC LIMIT ?`
+    ).all(...params, limit);
     return rows.map(rowToLesson);
   }
   edit(id, changes) {
@@ -65500,14 +65505,16 @@ var LessonRepository = class {
     this.db.prepare("INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters) VALUES (?, ?, ?, ?)").run(id, quote, whatChanged, whyItMatters);
   }
 };
-function lessonSelect() {
+function lessonSelect(usesFts = false) {
   return `SELECT l.*, t.submitted_by, t.playbook_ref
           FROM lessons l
-          JOIN traces t ON t.id = l.trace_id`;
+          JOIN traces t ON t.id = l.trace_id
+          ${usesFts ? "JOIN lessons_fts ON lessons_fts.id = l.id" : ""}`;
 }
 function filterWhere(filters, ftsAvailable2) {
   const clauses = [];
   const params = [];
+  let usesFts = false;
   for (const key of ["status", "typology", "playbook_ref", "submitted_by"]) {
     const value = filters[key];
     if (value) {
@@ -65516,12 +65523,13 @@ function filterWhere(filters, ftsAvailable2) {
     }
   }
   if (filters.q) {
-    const keywords = filters.q.toLowerCase().split(/\W+/).filter((word) => word.length > 2);
+    const keywords = filters.q.toLowerCase().split(/\W+/).filter(Boolean);
     if (keywords.length > 0) {
       if (ftsAvailable2) {
         const match = keywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
-        clauses.push("l.id IN (SELECT id FROM lessons_fts WHERE lessons_fts MATCH ?)");
+        clauses.push("lessons_fts MATCH ?");
         params.push(match);
+        usesFts = true;
       } else {
         clauses.push(
           `(${keywords.map((keyword) => {
@@ -65533,7 +65541,11 @@ function filterWhere(filters, ftsAvailable2) {
       }
     }
   }
-  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params, usesFts };
+}
+function normalizeLimit(value) {
+  if (!value || !Number.isFinite(value)) return 100;
+  return Math.min(Math.max(Math.floor(value), 1), 100);
 }
 
 // backend/src/repositories/traceRepository.ts
@@ -65613,6 +65625,9 @@ var LessonService = class {
       quote_verified: payload.quote === void 0 ? current.quote_verified : this.verifyLessonQuote(current.trace_id, payload.quote)
     });
   }
+  setDomainProfile(domainProfile) {
+    this.domainProfile = domainProfile;
+  }
   requireLesson(id) {
     const lesson = this.lessons.getById(id);
     if (!lesson) throw new Error(`Lesson not found: ${id}`);
@@ -65670,6 +65685,9 @@ var TraceService = class {
     this.traces.markExtracted(input.trace_id);
     return lesson;
   }
+  setDomainProfile(domainProfile) {
+    this.domainProfile = domainProfile;
+  }
   requireTrace(id) {
     const trace = this.traces.getById(id);
     if (!trace) throw new Error(`Trace not found: ${id}`);
@@ -65690,11 +65708,25 @@ function buildLocalContext(dbPath, domainPath) {
   const db = openDb(dbPath);
   const traceRepo = new TraceRepository(db);
   const lessonRepo = new LessonRepository(db);
-  const domainProfile = loadDomainProfile(domainPath);
+  let domainProfile = loadDomainProfile(domainPath);
+  const traceService = new TraceService(traceRepo, lessonRepo, domainProfile);
+  const lessonService = new LessonService(lessonRepo, traceRepo, domainProfile);
   return {
-    traceService: new TraceService(traceRepo, lessonRepo, domainProfile),
-    lessonService: new LessonService(lessonRepo, traceRepo, domainProfile),
-    domainProfile
+    traceService,
+    lessonService,
+    get domainProfile() {
+      return domainProfile;
+    },
+    updateDomainProfile(content) {
+      if (parseTypologyCategories(content).length === 0) {
+        throw new Error("A domain profile needs at least one category under # Typology.");
+      }
+      const result = saveDomainProfileAt(domainPath, content);
+      domainProfile = loadDomainProfile(domainPath);
+      traceService.setDomainProfile(domainProfile);
+      lessonService.setDomainProfile(domainProfile);
+      return { ...result, profile: domainProfile };
+    }
   };
 }
 
@@ -65703,15 +65735,20 @@ var import_express3 = __toESM(require_express2(), 1);
 import { existsSync as existsSync2 } from "node:fs";
 import { join as join2, resolve as resolve2 } from "node:path";
 
-// backend/src/routes/lessons.ts
-var import_express = __toESM(require_express2(), 1);
-
 // node_modules/.bun/zod@3.25.76/node_modules/zod/index.js
 init_external();
 init_external();
 
 // backend/src/routes/lessons.ts
-var statusQuery = external_exports.enum(["pending_review", "rejected", "promoted"]).optional();
+var import_express = __toESM(require_express2(), 1);
+var listQuery = external_exports.object({
+  status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
+  typology: external_exports.string().optional(),
+  playbook_ref: external_exports.string().optional(),
+  submitted_by: external_exports.string().optional(),
+  q: external_exports.string().optional(),
+  limit: external_exports.coerce.number().int().min(1).max(100).optional()
+});
 var editBody = external_exports.object({
   quote: external_exports.string().min(1).optional(),
   what_changed: external_exports.string().min(1).optional(),
@@ -65729,15 +65766,11 @@ var promoteBody = external_exports.object({
 function lessonsRouter(ctx) {
   const router = (0, import_express.Router)();
   router.get("/", (req, res) => {
-    const status = statusQuery.safeParse(req.query.status);
-    if (!status.success) return res.status(400).json({ error: status.error.message });
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     res.json(
       ctx.lessonService.list({
-        status: status.data,
-        typology: req.query.typology,
-        playbook_ref: req.query.playbook_ref,
-        submitted_by: req.query.submitted_by,
-        q: req.query.q
+        ...parsed.data
       })
     );
   });
@@ -65781,7 +65814,7 @@ var createTraceBody = external_exports.object({
   playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
 });
-var statusQuery2 = external_exports.enum(["captured", "extracted", "skipped"]).optional();
+var statusQuery = external_exports.enum(["captured", "extracted", "skipped"]).optional();
 var skipBody = external_exports.object({ reason: external_exports.string().min(1) });
 var extractBody = external_exports.object({
   quote: external_exports.string().min(1),
@@ -65799,7 +65832,7 @@ function tracesRouter(ctx) {
     res.status(201).json(ctx.traceService.capture(parsed.data));
   });
   router.get("/", (req, res) => {
-    const parsed = statusQuery2.safeParse(req.query.status);
+    const parsed = statusQuery.safeParse(req.query.status);
     if (!parsed.success) return sendZodError(res, parsed.error);
     res.json(ctx.traceService.list(parsed.data));
   });
@@ -65843,7 +65876,17 @@ function createServer(ctx) {
   app.use("/traces", tracesRouter(ctx));
   app.use("/lessons", lessonsRouter(ctx));
   app.get("/domain", (_req, res) => {
-    res.json({ typology_categories: ctx.domainProfile.typology_categories });
+    res.json({ content: ctx.domainProfile.raw, typology_categories: ctx.domainProfile.typology_categories });
+  });
+  app.put("/domain", (req, res) => {
+    const parsed = external_exports.object({ content: external_exports.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    try {
+      const result = ctx.updateDomainProfile(parsed.data.content);
+      res.json({ content: result.profile.raw, typology_categories: result.profile.typology_categories });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
   app.get("/__birdie", (_req, res) => {
     res.json({ birdie: true });
@@ -65923,7 +65966,7 @@ var RemoteLessonService = class {
 function query(params) {
   const search2 = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value) search2.set(key, value);
+    if (value !== void 0) search2.set(key, String(value));
   }
   const text = search2.toString();
   return text ? `?${text}` : "";
@@ -65967,6 +66010,27 @@ var RemoteTraceService = class {
   }
 };
 
+// backend/src/services/remoteDomainService.ts
+var RemoteDomainService = class {
+  constructor(serverUrl) {
+    this.serverUrl = serverUrl;
+  }
+  async get() {
+    return toDomainProfile(await requestJson(this.serverUrl, "/domain"));
+  }
+  async save(content) {
+    return toDomainProfile(
+      await requestJson(this.serverUrl, "/domain", {
+        method: "PUT",
+        body: JSON.stringify({ content })
+      })
+    );
+  }
+};
+function toDomainProfile(response) {
+  return { raw: response.content, typology_categories: response.typology_categories };
+}
+
 // backend/src/mcpContext.ts
 var runningWebServer;
 var runningWebUrl;
@@ -65977,14 +66041,18 @@ function buildMcpContext() {
   }
   if (state.config.mode === "remote") {
     const serverUrl = state.config.server_url.replace(/\/+$/, "");
+    const domainService = new RemoteDomainService(serverUrl);
     return {
       firstRun: false,
       mode: "remote",
       traceService: new RemoteTraceService(serverUrl),
       lessonService: new RemoteLessonService(serverUrl),
-      domainProfile: loadDomainProfile(domainProfilePath()),
       completeSetup,
-      saveDomainProfile,
+      getDomainProfile: () => domainService.get(),
+      saveDomainProfile: async (content) => {
+        await domainService.save(content);
+        return { path: `${serverUrl}/domain` };
+      },
       openReviewQueue: async () => ({ url: serverUrl })
     };
   }
@@ -65994,9 +66062,9 @@ function buildMcpContext() {
     mode: "local",
     traceService: local.traceService,
     lessonService: local.lessonService,
-    domainProfile: local.domainProfile,
     completeSetup,
-    saveDomainProfile,
+    getDomainProfile: async () => local.domainProfile,
+    saveDomainProfile: async (content) => saveDomainProfile(content),
     openReviewQueue: () => startLocalReviewQueue(local)
   };
 }
@@ -66004,9 +66072,9 @@ function unconfiguredContext() {
   return {
     firstRun: true,
     mode: "unconfigured",
-    domainProfile: loadDomainProfile(domainProfilePath()),
     completeSetup,
-    saveDomainProfile,
+    getDomainProfile: async () => loadDomainProfile(domainProfilePath()),
+    saveDomainProfile: async (content) => saveDomainProfile(content),
     openReviewQueue: async () => {
       throw new Error("Birdie is not set up yet. Use the setup-birdie prompt first.");
     }
@@ -77823,7 +77891,7 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
     name: "setup-birdie",
     description: "Guide a first-time user through local or shared-server setup and optional category setup.",
     arguments: [],
-    load: async () => buildSetupPrompt(ctxFactory().domainProfile)
+    load: async () => buildSetupPrompt(await ctxFactory().getDomainProfile())
   });
   mcp.addPrompt({
     name: "configure-birdie",
@@ -77835,7 +77903,7 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
     name: "extract-lesson",
     description: "Extract a mentorship lesson from a captured example.",
     arguments: [{ name: "trace_id", description: "The example to extract from", required: true }],
-    load: async (args) => buildExtractLessonPrompt(ctxFactory().domainProfile, args.trace_id)
+    load: async (args) => buildExtractLessonPrompt(await ctxFactory().getDomainProfile(), args.trace_id)
   });
   mcp.addPrompt({
     name: "ask-lesson",
@@ -77980,7 +78048,8 @@ var saveExtractionParams = external_exports.object({
 var listLessonsParams = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
   typology: external_exports.string().optional(),
-  playbook_ref: external_exports.string().optional()
+  playbook_ref: external_exports.string().optional(),
+  limit: external_exports.number().int().min(1).max(100).optional()
 });
 var reviewLessonParams = external_exports.object({
   lesson_id: external_exports.string().min(1),
@@ -77999,7 +78068,7 @@ var promoteLessonParams = external_exports.object({
   typology: external_exports.string().min(1).optional()
 });
 var askLessonParams = external_exports.object({
-  question: external_exports.string().min(1),
+  question: external_exports.string().trim().min(2).refine(hasSearchTerms, "Ask a question containing at least one letter or number."),
   person: external_exports.string().min(1).optional(),
   typology: external_exports.string().min(1).optional()
 });
@@ -78027,19 +78096,19 @@ function registerTools(server, ctxFactory = buildMcpContext) {
     name: "get_domain_profile",
     description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
     parameters: emptyParams,
-    execute: async () => json(getDomainProfileHandler())
+    execute: async () => json(await getDomainProfileHandler(ctxFactory()))
   });
   mcp.addTool({
     name: "birdie_doctor",
     description: "Run quick setup checks and explain what the user should fix next.",
     parameters: emptyParams,
-    execute: async () => json(await birdieDoctorHandler())
+    execute: async () => json(await birdieDoctorHandler(ctxFactory()))
   });
   mcp.addTool({
     name: "save_domain_profile",
     description: "Save your team's categories and guidance after the setup interview.",
     parameters: domainProfileParams,
-    execute: async (args) => json(saveDomainProfileHandler(ctxFactory(), args))
+    execute: async (args) => json(await saveDomainProfileHandler(ctxFactory(), args))
   });
   mcp.addTool({
     name: "open_review_queue",
@@ -78108,7 +78177,8 @@ function registerTools(server, ctxFactory = buildMcpContext) {
         status: "promoted",
         submitted_by: args.person,
         typology: args.typology,
-        q: args.question
+        q: args.question,
+        limit: 12
       })
     )
   });
@@ -78132,17 +78202,17 @@ function updateBirdieSettingsHandler(args) {
   }
   return writeConfig(config2);
 }
-function getDomainProfileHandler() {
-  const saved = readDomainProfileFile();
-  const loaded = loadDomainProfile(domainProfilePath());
+async function getDomainProfileHandler(ctx) {
+  const loaded = await ctx.getDomainProfile();
+  const saved = ctx.mode === "remote" ? void 0 : readDomainProfileFile();
   return {
-    path: saved.path,
-    customized: saved.customized,
-    content: saved.customized ? saved.content : loaded.raw,
+    path: ctx.mode === "remote" ? `${readSettingsSummary().server_url}/domain` : saved.path,
+    customized: ctx.mode === "remote" || saved.customized,
+    content: loaded.raw,
     typology_categories: loaded.typology_categories
   };
 }
-async function birdieDoctorHandler() {
+async function birdieDoctorHandler(ctx) {
   const settings = readSettingsSummary();
   const checks = [
     {
@@ -78163,12 +78233,16 @@ async function birdieDoctorHandler() {
   if (settings.mode === "remote" && settings.server_url) {
     checks.push(await checkRemoteServer(settings.server_url));
   }
-  const domain = loadDomainProfile(domainProfilePath());
-  checks.push({
-    name: "domain_profile",
-    ok: domain.typology_categories.length > 0,
-    detail: `${domain.typology_categories.length} typology categories available.`
-  });
+  try {
+    const domain = await ctx.getDomainProfile();
+    checks.push({
+      name: "domain_profile",
+      ok: domain.typology_categories.length > 0,
+      detail: `${domain.typology_categories.length} typology categories available.`
+    });
+  } catch (err) {
+    checks.push({ name: "domain_profile", ok: false, detail: errorMessage(err) });
+  }
   return { settings, checks, ok: checks.every((check2) => check2.ok) };
 }
 function saveDomainProfileHandler(ctx, args) {
@@ -78200,6 +78274,9 @@ async function checkRemoteServer(serverUrl) {
 }
 function errorMessage(err) {
   return err instanceof Error ? err.message : String(err);
+}
+function hasSearchTerms(question) {
+  return /[\p{L}\p{N}]/u.test(question);
 }
 
 // backend/src/mcp/server.ts
