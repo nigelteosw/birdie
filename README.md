@@ -70,9 +70,9 @@ By default it binds to a fixed port, `http://127.0.0.1:6677`, so you always know
 
 Ask Birdie to switch at any point — e.g. "switch me to the team server at https://birdie.example.com" or "go back to local mode." That re-runs `complete_setup` with the new mode, which overwrites `~/.birdie/config.json`; since every tool call re-reads that config, the switch takes effect immediately on the next request, no restart needed. Switching doesn't migrate data: your local `~/.birdie/birdie.db` is left untouched (nothing is pushed to the shared server, nothing is deleted), so switching back to local later picks up right where that local db left off, and switching to remote just points new activity at the shared server instead.
 
-In local mode, the domain profile is stored under `~/.birdie/domain.md`. In shared-server mode, `get_domain_profile` and `save_domain_profile` read and update the server's profile instead, so every connected assistant uses the same categories immediately.
+In local mode, the domain profile is stored under `~/.birdie/domain.md`. In shared-server mode, `get_domain_profile` and `save_domain_profile` read and update the server's profile instead, so every connected assistant uses the same domain profile immediately.
 
-You can also use the `configure-birdie` MCP prompt, or ask Birdie to show settings, run diagnostics, switch mode, or update categories. The plugin exposes `get_birdie_settings`, `update_birdie_settings`, `get_domain_profile`, `save_domain_profile`, and `birdie_doctor` for assistants that prefer direct tool calls.
+You can also use the `configure-birdie` MCP prompt, or ask Birdie to show settings, run diagnostics, switch mode, or update the domain profile. The plugin exposes `get_birdie_settings`, `update_birdie_settings`, `get_domain_profile`, `save_domain_profile`, and `birdie_doctor` for assistants that prefer direct tool calls.
 
 ### Sharing one local backend across assistants
 
@@ -96,7 +96,7 @@ Use a LAN or tunnel URL instead of `127.0.0.1` if the client runs on a different
 
 - Local config: `~/.birdie/config.json`
 - Local database: `~/.birdie/birdie.db`
-- Local domain profile: `~/.birdie/domain.md`, falling back to `domain.md`
+- Local domain profile: `~/.birdie/domain.md`, falling back to a generic built-in default until you customize it (ask Birdie to do this during setup)
 - Dev overrides: `BIRDIE_CONFIG_PATH`, `DB_PATH`, `DOMAIN_PROFILE_PATH`, `PORT`
 
 ### CLI settings
@@ -121,11 +121,11 @@ docker compose up --build
 # → http://localhost:6677
 ```
 
-Data lives at `/data/birdie.db` inside the container; `docker-compose.yml` mounts a named volume there so it survives restarts and rebuilds. Point remote clients at the container's URL the same way as any shared server (see "Sharing one local backend across assistants" above).
+Data lives at `/data/birdie.db` inside the container; `docker-compose.yml` mounts a named volume there so it survives restarts and rebuilds. The domain profile lives alongside it at `/data/domain.md` — there's no bundled example file, so the server starts with the generic built-in default until a team customizes it (ask Birdie to do this via the `setup-birdie`/`configure-birdie` prompts; it calls `save_domain_profile`, which persists to that same volume). Point remote clients at the container's URL the same way as any shared server (see "Sharing one local backend across assistants" above).
 
 The image is plain Docker with no platform-specific config, so any host that builds a Dockerfile and can attach a persistent volume works — Railway, Fly.io, Render, a bare VPS, etc. Two things every host needs to be told:
 
-- Mount a persistent volume at `/data` — without it, the SQLite file resets on every redeploy.
+- Mount a persistent volume at `/data` — without it, the SQLite file resets on every redeploy. The Dockerfile intentionally has no `VOLUME` instruction (Railway's builder rejects it outright — "use Railway Volumes"), so this has to be configured on the host side: on Railway, add a Volume in the service's Settings and mount it at `/data`; other hosts have their own equivalent (Fly.io volumes, Render disks, `docker run -v` / `docker-compose.yml`'s `volumes:` for a VPS).
 - The server reads `PORT` from the environment (default `6677`) and exposes `GET /__birdie` as a health check, so wire those into whatever health-check/port config the host expects.
 
 **Vercel is not a fit for this image.** Vercel functions run on an ephemeral filesystem with no persistent disk, so a file-backed SQLite database won't survive between invocations or deploys. Use a host that runs a persistent container with an attached volume instead.

@@ -65207,7 +65207,6 @@ function migrate(db) {
       quote_verified INTEGER NOT NULL,
       what_changed TEXT NOT NULL,
       why_it_matters TEXT NOT NULL,
-      typology TEXT NOT NULL,
       playbook_alignment TEXT,
       playbook_note TEXT,
       status TEXT NOT NULL DEFAULT 'pending_review',
@@ -65221,7 +65220,8 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
-  dropLegacyRoleColumns(db);
+  dropColumnsIfPresent(db, "traces", ["submitted_by_role", "junior_name", "senior_name"]);
+  dropColumnsIfPresent(db, "lessons", ["typology"]);
   setUpLessonsFts(db);
 }
 function ftsAvailable(db) {
@@ -65239,12 +65239,15 @@ function setUpLessonsFts(db) {
   } catch {
   }
 }
-function dropLegacyRoleColumns(db) {
-  const columns = db.prepare("PRAGMA table_info(traces)").all();
-  const names = new Set(columns.map((column) => column.name));
-  for (const column of ["submitted_by_role", "junior_name", "senior_name"]) {
+function dropColumnsIfPresent(db, table, columns) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  const names = new Set(existing.map((column) => column.name));
+  for (const column of columns) {
     if (names.has(column)) {
-      db.exec(`ALTER TABLE traces DROP COLUMN ${column}`);
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      } catch {
+      }
     }
   }
 }
@@ -65253,13 +65256,6 @@ function dropLegacyRoleColumns(db) {
 import { readFileSync } from "node:fs";
 var DEFAULT_PROFILE = `# Domain
 A general legal practice reviewing contracts and client work product.
-
-# Typology
-- playbook_compliance: The edit enforces a documented firm playbook/style-guide rule.
-- editorial_style: A stylistic or formatting preference with no risk or playbook basis.
-- substantive_risk: A legal risk or liability judgment call.
-- clarity_precision: The edit resolves ambiguity or tightens vague drafting.
-- other: Doesn't fit the above.
 
 # What counts as mentorship-worthy
 Capture edits that reflect a real judgment call - a risk tradeoff, a
@@ -65274,22 +65270,7 @@ function loadDomainProfile(path) {
   } catch {
     raw = DEFAULT_PROFILE;
   }
-  const typology_categories = parseTypologyCategories(raw);
-  return {
-    raw: typology_categories.length > 0 ? raw : DEFAULT_PROFILE,
-    typology_categories: typology_categories.length > 0 ? typology_categories : parseTypologyCategories(DEFAULT_PROFILE)
-  };
-}
-function parseTypologyCategories(raw) {
-  const section = raw.split(/^# Typology\s*$/m)[1];
-  if (!section) return [];
-  const body = section.split(/^# /m)[0];
-  const categories = [];
-  for (const line of body.split("\n")) {
-    const match = line.match(/^-\s*([a-zA-Z0-9_ -]+?)\s*:/);
-    if (match) categories.push(match[1].trim().replace(/\s+/g, "_"));
-  }
-  return categories;
+  return { raw };
 }
 
 // backend/src/config.ts
@@ -65364,6 +65345,9 @@ function saveDomainProfile(content) {
   return saveDomainProfileAt(domainProfilePath(), content);
 }
 function saveDomainProfileAt(path, content) {
+  if (!content.trim()) {
+    throw new Error("Domain profile cannot be empty.");
+  }
   mkdirSync2(dirname2(path), { recursive: true });
   writeFileSync(path, content.endsWith("\n") ? content : `${content}
 `);
@@ -65397,9 +65381,9 @@ var LessonRepository = class {
     this.db.prepare(
       `INSERT INTO lessons (
           id, trace_id, quote, quote_verified, what_changed, why_it_matters,
-          typology, playbook_alignment, playbook_note, status
+          playbook_alignment, playbook_note, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
+          ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
         )`
     ).run(
       id,
@@ -65408,7 +65392,6 @@ var LessonRepository = class {
       input.quote_verified ? 1 : 0,
       input.what_changed,
       input.why_it_matters,
-      input.typology,
       input.playbook_alignment ?? null,
       input.playbook_note ?? null
     );
@@ -65439,13 +65422,12 @@ var LessonRepository = class {
       quote_verified: changes.quote_verified ?? current.quote_verified,
       what_changed: changes.what_changed ?? current.what_changed,
       why_it_matters: changes.why_it_matters ?? current.why_it_matters,
-      typology: changes.typology ?? current.typology,
       status: changes.reject ? "rejected" : current.status
     };
     this.db.prepare(
       `UPDATE lessons
          SET quote = ?, quote_verified = ?, what_changed = ?,
-             why_it_matters = ?, typology = ?, status = ?,
+             why_it_matters = ?, status = ?,
              reviewed_at = CASE WHEN ? = 'rejected' THEN ? ELSE reviewed_at END
          WHERE id = ?`
     ).run(
@@ -65453,7 +65435,6 @@ var LessonRepository = class {
       next.quote_verified ? 1 : 0,
       next.what_changed,
       next.why_it_matters,
-      next.typology,
       next.status,
       next.status,
       (/* @__PURE__ */ new Date()).toISOString(),
@@ -65475,14 +65456,13 @@ var LessonRepository = class {
       quote: payload.quote ?? current.quote,
       quote_verified: payload.quote_verified ?? current.quote_verified,
       what_changed: payload.what_changed ?? current.what_changed,
-      why_it_matters: payload.why_it_matters ?? current.why_it_matters,
-      typology: payload.typology ?? current.typology
+      why_it_matters: payload.why_it_matters ?? current.why_it_matters
     };
     const now = (/* @__PURE__ */ new Date()).toISOString();
     this.db.prepare(
       `UPDATE lessons
          SET quote = ?, quote_verified = ?, what_changed = ?,
-             why_it_matters = ?, typology = ?, status = 'promoted',
+             why_it_matters = ?, status = 'promoted',
              reviewer = ?, reviewed_at = ?, promoted_at = ?
          WHERE id = ?`
     ).run(
@@ -65490,7 +65470,6 @@ var LessonRepository = class {
       next.quote_verified ? 1 : 0,
       next.what_changed,
       next.why_it_matters,
-      next.typology,
       payload.reviewer.trim(),
       now,
       now,
@@ -65499,9 +65478,22 @@ var LessonRepository = class {
     this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id);
   }
-  syncFts(id, quote, whatChanged, whyItMatters) {
+  delete(id) {
+    const current = this.getById(id);
+    if (!current) throw new Error(`Lesson not found: ${id}`);
+    if (current.status !== "promoted") {
+      throw new Error(`Lesson ${id} cannot be deleted from status '${current.status}'`);
+    }
+    this.db.prepare("DELETE FROM lessons WHERE id = ?").run(id);
+    this.deleteFts(id);
+  }
+  deleteFts(id) {
     if (!this.ftsAvailable) return;
     this.db.prepare("DELETE FROM lessons_fts WHERE id = ?").run(id);
+  }
+  syncFts(id, quote, whatChanged, whyItMatters) {
+    if (!this.ftsAvailable) return;
+    this.deleteFts(id);
     this.db.prepare("INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters) VALUES (?, ?, ?, ?)").run(id, quote, whatChanged, whyItMatters);
   }
 };
@@ -65515,10 +65507,10 @@ function filterWhere(filters, ftsAvailable2) {
   const clauses = [];
   const params = [];
   let usesFts = false;
-  for (const key of ["status", "typology", "playbook_ref", "submitted_by"]) {
+  for (const key of ["status", "playbook_ref", "submitted_by"]) {
     const value = filters[key];
     if (value) {
-      clauses.push(key === "status" || key === "typology" ? `l.${key} = ?` : `t.${key} = ?`);
+      clauses.push(key === "status" ? `l.${key} = ?` : `t.${key} = ?`);
       params.push(value);
     }
   }
@@ -65598,10 +65590,9 @@ function verifyQuote(quote, beforeText) {
 
 // backend/src/services/lessonService.ts
 var LessonService = class {
-  constructor(lessons, traces, domainProfile) {
+  constructor(lessons, traces) {
     this.lessons = lessons;
     this.traces = traces;
-    this.domainProfile = domainProfile;
   }
   list(filters) {
     return this.lessons.list(filters);
@@ -65611,7 +65602,6 @@ var LessonService = class {
   }
   review(id, changes) {
     const current = this.requireLesson(id);
-    this.validateTypology(changes.typology);
     return this.lessons.edit(id, {
       ...changes,
       quote_verified: changes.quote === void 0 ? current.quote_verified : this.verifyLessonQuote(current.trace_id, changes.quote)
@@ -65619,14 +65609,13 @@ var LessonService = class {
   }
   promote(id, payload) {
     const current = this.requireLesson(id);
-    this.validateTypology(payload.typology);
     return this.lessons.promote(id, {
       ...payload,
       quote_verified: payload.quote === void 0 ? current.quote_verified : this.verifyLessonQuote(current.trace_id, payload.quote)
     });
   }
-  setDomainProfile(domainProfile) {
-    this.domainProfile = domainProfile;
+  delete(id) {
+    this.lessons.delete(id);
   }
   requireLesson(id) {
     const lesson = this.lessons.getById(id);
@@ -65638,19 +65627,13 @@ var LessonService = class {
     if (!trace) throw new Error(`Trace not found: ${traceId}`);
     return verifyQuote(quote, trace.before_text);
   }
-  validateTypology(typology) {
-    if (typology && !this.domainProfile.typology_categories.includes(typology)) {
-      throw new Error(`Unknown category '${typology}'. Valid categories: ${this.domainProfile.typology_categories.join(", ")}`);
-    }
-  }
 };
 
 // backend/src/services/traceService.ts
 var TraceService = class {
-  constructor(traces, lessons, domainProfile) {
+  constructor(traces, lessons) {
     this.traces = traces;
     this.lessons = lessons;
-    this.domainProfile = domainProfile;
   }
   capture(input) {
     return this.traces.create(input);
@@ -65677,7 +65660,6 @@ var TraceService = class {
     if (this.lessons.getByTraceId(input.trace_id)) {
       throw new Error(`Trace ${input.trace_id} already has a lesson`);
     }
-    this.validateTypology(input.typology);
     const lesson = this.lessons.create({
       ...input,
       quote_verified: verifyQuote(input.quote, trace.before_text)
@@ -65685,18 +65667,10 @@ var TraceService = class {
     this.traces.markExtracted(input.trace_id);
     return lesson;
   }
-  setDomainProfile(domainProfile) {
-    this.domainProfile = domainProfile;
-  }
   requireTrace(id) {
     const trace = this.traces.getById(id);
     if (!trace) throw new Error(`Trace not found: ${id}`);
     return trace;
-  }
-  validateTypology(typology) {
-    if (!this.domainProfile.typology_categories.includes(typology)) {
-      throw new Error(`Unknown category '${typology}'. Valid categories: ${this.domainProfile.typology_categories.join(", ")}`);
-    }
   }
 };
 
@@ -65709,8 +65683,8 @@ function buildLocalContext(dbPath, domainPath) {
   const traceRepo = new TraceRepository(db);
   const lessonRepo = new LessonRepository(db);
   let domainProfile = loadDomainProfile(domainPath);
-  const traceService = new TraceService(traceRepo, lessonRepo, domainProfile);
-  const lessonService = new LessonService(lessonRepo, traceRepo, domainProfile);
+  const traceService = new TraceService(traceRepo, lessonRepo);
+  const lessonService = new LessonService(lessonRepo, traceRepo);
   return {
     traceService,
     lessonService,
@@ -65718,13 +65692,8 @@ function buildLocalContext(dbPath, domainPath) {
       return domainProfile;
     },
     updateDomainProfile(content) {
-      if (parseTypologyCategories(content).length === 0) {
-        throw new Error("A domain profile needs at least one category under # Typology.");
-      }
       const result = saveDomainProfileAt(domainPath, content);
       domainProfile = loadDomainProfile(domainPath);
-      traceService.setDomainProfile(domainProfile);
-      lessonService.setDomainProfile(domainProfile);
       return { ...result, profile: domainProfile };
     }
   };
@@ -65743,7 +65712,6 @@ init_external();
 var import_express = __toESM(require_express2(), 1);
 var listQuery = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
-  typology: external_exports.string().optional(),
   playbook_ref: external_exports.string().optional(),
   submitted_by: external_exports.string().optional(),
   q: external_exports.string().optional(),
@@ -65753,15 +65721,13 @@ var editBody = external_exports.object({
   quote: external_exports.string().min(1).optional(),
   what_changed: external_exports.string().min(1).optional(),
   why_it_matters: external_exports.string().min(1).optional(),
-  typology: external_exports.string().min(1).optional(),
   reject: external_exports.boolean().optional()
 });
 var promoteBody = external_exports.object({
   reviewer: external_exports.string().trim().min(1),
   quote: external_exports.string().min(1).optional(),
   what_changed: external_exports.string().min(1).optional(),
-  why_it_matters: external_exports.string().min(1).optional(),
-  typology: external_exports.string().min(1).optional()
+  why_it_matters: external_exports.string().min(1).optional()
 });
 function lessonsRouter(ctx) {
   const router = (0, import_express.Router)();
@@ -65797,6 +65763,14 @@ function lessonsRouter(ctx) {
       sendServiceError(res, err);
     }
   });
+  router.delete("/:id", (req, res) => {
+    try {
+      ctx.lessonService.delete(req.params.id);
+      res.status(204).end();
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
   return router;
 }
 function sendServiceError(res, err) {
@@ -65820,7 +65794,6 @@ var extractBody = external_exports.object({
   quote: external_exports.string().min(1),
   what_changed: external_exports.string().min(1),
   why_it_matters: external_exports.string().min(1),
-  typology: external_exports.string().min(1),
   playbook_alignment: external_exports.enum(["aligned", "diverges", "not_applicable"]).optional(),
   playbook_note: external_exports.string().optional()
 });
@@ -65876,14 +65849,14 @@ function createServer(ctx) {
   app.use("/traces", tracesRouter(ctx));
   app.use("/lessons", lessonsRouter(ctx));
   app.get("/domain", (_req, res) => {
-    res.json({ content: ctx.domainProfile.raw, typology_categories: ctx.domainProfile.typology_categories });
+    res.json({ content: ctx.domainProfile.raw });
   });
   app.put("/domain", (req, res) => {
     const parsed = external_exports.object({ content: external_exports.string().min(1) }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     try {
       const result = ctx.updateDomainProfile(parsed.data.content);
-      res.json({ content: result.profile.raw, typology_categories: result.profile.typology_categories });
+      res.json({ content: result.profile.raw });
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -66028,7 +66001,7 @@ var RemoteDomainService = class {
   }
 };
 function toDomainProfile(response) {
-  return { raw: response.content, typology_categories: response.typology_categories };
+  return { raw: response.content };
 }
 
 // backend/src/mcpContext.ts
@@ -77889,13 +77862,13 @@ function registerPrompts(server, ctxFactory = buildMcpContext) {
   const mcp = server;
   mcp.addPrompt({
     name: "setup-birdie",
-    description: "Guide a first-time user through local or shared-server setup and optional category setup.",
+    description: "Guide a first-time user through local or shared-server setup and optional domain profile setup.",
     arguments: [],
     load: async () => buildSetupPrompt(await ctxFactory().getDomainProfile())
   });
   mcp.addPrompt({
     name: "configure-birdie",
-    description: "Inspect or change Birdie settings, including local vs shared server mode and category/domain profile.",
+    description: "Inspect or change Birdie settings, including local vs shared server mode and domain profile.",
     arguments: [],
     load: async () => buildConfigurePrompt()
   });
@@ -77923,13 +77896,10 @@ Ask the user, in plain language, whether they already have a Birdie server URL f
 If they provide a URL, call complete_setup with mode="remote", server_url set to that URL, and user_name set to their name.
 If they do not have one, call complete_setup with mode="local" and user_name set to their name.
 
-Then offer to customize their team's categories. If they want to customize, ask what field they are in and what kinds of edits matter. Turn their answer into this markdown shape and call save_domain_profile:
+Then offer to customize their team's domain guidance. If they want to customize, ask what field they are in and what kinds of edits matter. Turn their answer into this markdown shape and call save_domain_profile:
 
 # Domain
 One paragraph.
-
-# Typology
-- category_name: one-line definition
 
 # What counts as mentorship-worthy
 Guidance.
@@ -77946,8 +77916,8 @@ Steps:
 3. To switch to local storage, call update_birdie_settings with mode="local".
 4. To connect to a shared local or remote backend, call update_birdie_settings with mode="remote" and server_url set to the provided URL.
 5. To update their remembered name, call update_birdie_settings with just user_name set \u2014 mode is not required for a name-only change.
-6. To review categories, call get_domain_profile.
-7. To change categories, ask for the domain and what edits matter, then write a markdown profile with # Domain, # Typology, and # What counts as mentorship-worthy, and call save_domain_profile.
+6. To review the domain profile, call get_domain_profile.
+7. To change it, ask for the domain and what edits matter, then write a markdown profile with # Domain and # What counts as mentorship-worthy, and call save_domain_profile.
 8. If something looks broken, call birdie_doctor and explain the failing check in plain language.`;
 }
 function buildExtractLessonPrompt(profile, traceId) {
@@ -77958,7 +77928,7 @@ ${profile.raw}
 Steps:
 1. Call get_trace with trace_id="${traceId}".
 2. Decide if the example is mentorship-worthy using the guidance above. If not, call skip_extraction with a short reason and stop.
-3. If it is worth capturing, prepare quote, what_changed, why_it_matters, typology, and optional playbook_alignment/playbook_note.
+3. If it is worth capturing, prepare quote, what_changed, why_it_matters, and optional playbook_alignment/playbook_note.
 4. The quote must be copied verbatim from before_text. Birdie checks this in code.
 5. If the edit differs from the playbook, say that directly in playbook_note.
 6. Call save_extraction.`;
@@ -77975,8 +77945,7 @@ Steps:
 // backend/src/copy.ts
 var copy = {
   trace: "example",
-  typology: "category",
-  promote: "add to the shared library",
+  promote: "add to the knowledge base",
   pendingReview: "waiting for review",
   quoteNotVerified: "We couldn't find this exact wording in the original text. Please check it before adding this lesson.",
   playbookDiverges: "This edit differs from your playbook. Confirm this is intentional before adding it.",
@@ -78041,13 +78010,11 @@ var saveExtractionParams = external_exports.object({
   quote: external_exports.string().min(1),
   what_changed: external_exports.string().min(1),
   why_it_matters: external_exports.string().min(1),
-  typology: external_exports.string().min(1),
   playbook_alignment: external_exports.enum(["aligned", "diverges", "not_applicable"]).optional(),
   playbook_note: external_exports.string().optional()
 });
 var listLessonsParams = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
-  typology: external_exports.string().optional(),
   playbook_ref: external_exports.string().optional(),
   limit: external_exports.number().int().min(1).max(100).optional()
 });
@@ -78056,7 +78023,6 @@ var reviewLessonParams = external_exports.object({
   quote: external_exports.string().min(1).optional(),
   what_changed: external_exports.string().min(1).optional(),
   why_it_matters: external_exports.string().min(1).optional(),
-  typology: external_exports.string().min(1).optional(),
   reject: external_exports.boolean().optional()
 });
 var promoteLessonParams = external_exports.object({
@@ -78064,13 +78030,11 @@ var promoteLessonParams = external_exports.object({
   reviewer: external_exports.string().trim().min(1),
   quote: external_exports.string().min(1).optional(),
   what_changed: external_exports.string().min(1).optional(),
-  why_it_matters: external_exports.string().min(1).optional(),
-  typology: external_exports.string().min(1).optional()
+  why_it_matters: external_exports.string().min(1).optional()
 });
 var askLessonParams = external_exports.object({
   question: external_exports.string().trim().min(2).refine(hasSearchTerms, "Ask a question containing at least one letter or number."),
-  person: external_exports.string().min(1).optional(),
-  typology: external_exports.string().min(1).optional()
+  person: external_exports.string().min(1).optional()
 });
 function registerTools(server, ctxFactory = buildMcpContext) {
   const mcp = server;
@@ -78094,7 +78058,7 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "get_domain_profile",
-    description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
+    description: "Read the current team/domain profile so users can review Birdie's mentorship-worthy guidance.",
     parameters: emptyParams,
     execute: async () => json(await getDomainProfileHandler(ctxFactory()))
   });
@@ -78106,7 +78070,7 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "save_domain_profile",
-    description: "Save your team's categories and guidance after the setup interview.",
+    description: "Save your team's domain guidance after the setup interview.",
     parameters: domainProfileParams,
     execute: async (args) => json(await saveDomainProfileHandler(ctxFactory(), args))
   });
@@ -78140,7 +78104,7 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "save_extraction",
-    description: "Save the candidate lesson. Birdie verifies the quote and category in code.",
+    description: "Save the candidate lesson. Birdie verifies the quote in code.",
     parameters: saveExtractionParams,
     execute: async (args) => json(await requireTraceService(ctxFactory()).extract(args))
   });
@@ -78170,13 +78134,12 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "ask_lesson",
-    description: "Find promoted lessons relevant to a question, optionally scoped to one person or category, for you to synthesize an answer from.",
+    description: "Find promoted lessons relevant to a question, optionally scoped to one person, for you to synthesize an answer from.",
     parameters: askLessonParams,
     execute: async (args) => json(
       await requireLessonService(ctxFactory()).list({
         status: "promoted",
         submitted_by: args.person,
-        typology: args.typology,
         q: args.question,
         limit: 12
       })
@@ -78208,8 +78171,7 @@ async function getDomainProfileHandler(ctx) {
   return {
     path: ctx.mode === "remote" ? `${readSettingsSummary().server_url}/domain` : saved.path,
     customized: ctx.mode === "remote" || saved.customized,
-    content: loaded.raw,
-    typology_categories: loaded.typology_categories
+    content: loaded.raw
   };
 }
 async function birdieDoctorHandler(ctx) {
@@ -78237,8 +78199,8 @@ async function birdieDoctorHandler(ctx) {
     const domain = await ctx.getDomainProfile();
     checks.push({
       name: "domain_profile",
-      ok: domain.typology_categories.length > 0,
-      detail: `${domain.typology_categories.length} typology categories available.`
+      ok: domain.raw.length > 0,
+      detail: "Domain profile loaded."
     });
   } catch (err) {
     checks.push({ name: "domain_profile", ok: false, detail: errorMessage(err) });
@@ -78377,8 +78339,8 @@ async function runDoctor() {
   const domain = loadDomainProfile(summary.domainPath);
   checks.push({
     name: "domain",
-    ok: domain.typology_categories.length > 0,
-    detail: `${domain.typology_categories.length} categories from ${existsSync3(summary.domainPath) ? summary.domainPath : "default profile"}`
+    ok: domain.raw.length > 0,
+    detail: `Domain profile loaded from ${existsSync3(summary.domainPath) ? summary.domainPath : "default profile"}`
   });
   for (const check2 of checks) {
     console.log(`${check2.ok ? "OK" : "FAIL"} ${check2.name}: ${check2.detail}`);

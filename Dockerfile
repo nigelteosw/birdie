@@ -22,7 +22,7 @@ FROM oven/bun:1-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     DB_PATH=/data/birdie.db \
-    DOMAIN_PROFILE_PATH=/app/domain.md
+    DOMAIN_PROFILE_PATH=/data/domain.md
 
 COPY package.json bun.lock ./
 COPY patches patches
@@ -31,10 +31,8 @@ COPY web/package.json web/package.json
 RUN bun install --frozen-lockfile --production
 
 COPY backend/src backend/src
-COPY domain.md domain.md
 COPY --from=web-builder /app/web/dist web/dist
 
-VOLUME ["/data"]
 EXPOSE 6677
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
