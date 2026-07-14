@@ -17,7 +17,6 @@ const extractBody = z.object({
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),
-  typology: z.string().min(1),
   playbook_alignment: z.enum(['aligned', 'diverges', 'not_applicable']).optional(),
   playbook_note: z.string().optional(),
 });

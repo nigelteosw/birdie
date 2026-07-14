@@ -45,7 +45,6 @@ describe('ask_lesson tool', () => {
       quote: 'uncapped indemnity',
       what_changed: 'Capped it.',
       why_it_matters: 'Risk control.',
-      typology: 'substantive_risk',
     });
     await ctx.lessonService!.promote(lesson.id, { reviewer: 'Sarah' });
 
@@ -73,7 +72,6 @@ describe('ask_lesson tool', () => {
         quote: before_text,
         what_changed: 'Improved it.',
         why_it_matters: 'Quality.',
-        typology: 'other',
       });
       await ctx.lessonService!.promote(lesson.id, { reviewer: 'Sarah' });
     }

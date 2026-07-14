@@ -33,7 +33,6 @@ export interface Lesson {
   quote_verified: boolean;
   what_changed: string;
   why_it_matters: string;
-  typology: string;
   playbook_alignment: PlaybookAlignment | null;
   playbook_note: string | null;
   status: LessonStatus;
@@ -53,7 +52,6 @@ export interface NewExtraction {
   quote: string;
   what_changed: string;
   why_it_matters: string;
-  typology: string;
   playbook_alignment?: PlaybookAlignment | null;
   playbook_note?: string | null;
 }
@@ -62,7 +60,6 @@ export interface LessonEdit {
   quote?: string;
   what_changed?: string;
   why_it_matters?: string;
-  typology?: string;
   reject?: boolean;
 }
 
@@ -71,12 +68,10 @@ export interface PromotePayload {
   quote?: string;
   what_changed?: string;
   why_it_matters?: string;
-  typology?: string;
 }
 
 export interface LessonFilters {
   status?: LessonStatus;
-  typology?: string;
   playbook_ref?: string;
   submitted_by?: string;
   q?: string;

@@ -105,6 +105,9 @@ export function saveDomainProfile(content: string): { path: string } {
 }
 
 export function saveDomainProfileAt(path: string, content: string): { path: string } {
+  if (!content.trim()) {
+    throw new Error('Domain profile cannot be empty.');
+  }
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content.endsWith('\n') ? content : `${content}\n`);
   return { path };

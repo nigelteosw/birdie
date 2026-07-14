@@ -73,13 +73,11 @@ const saveExtractionParams = z.object({
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),
-  typology: z.string().min(1),
   playbook_alignment: z.enum(['aligned', 'diverges', 'not_applicable']).optional(),
   playbook_note: z.string().optional(),
 });
 const listLessonsParams = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
-  typology: z.string().optional(),
   playbook_ref: z.string().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
@@ -88,7 +86,6 @@ const reviewLessonParams = z.object({
   quote: z.string().min(1).optional(),
   what_changed: z.string().min(1).optional(),
   why_it_matters: z.string().min(1).optional(),
-  typology: z.string().min(1).optional(),
   reject: z.boolean().optional(),
 });
 const promoteLessonParams = z.object({
@@ -97,7 +94,6 @@ const promoteLessonParams = z.object({
   quote: z.string().min(1).optional(),
   what_changed: z.string().min(1).optional(),
   why_it_matters: z.string().min(1).optional(),
-  typology: z.string().min(1).optional(),
 });
 const askLessonParams = z.object({
   question: z
@@ -106,7 +102,6 @@ const askLessonParams = z.object({
     .min(2)
     .refine(hasSearchTerms, 'Ask a question containing at least one letter or number.'),
   person: z.string().min(1).optional(),
-  typology: z.string().min(1).optional(),
 });
 
 export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = buildMcpContext): void {
@@ -135,7 +130,7 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
   mcp.addTool({
     name: 'get_domain_profile',
-    description: "Read the current team/domain category profile so users can review Birdie's classification settings.",
+    description: "Read the current team/domain profile so users can review Birdie's mentorship-worthy guidance.",
     parameters: emptyParams,
     execute: async () => json(await getDomainProfileHandler(ctxFactory())),
   });
@@ -147,7 +142,7 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
   mcp.addTool({
     name: 'save_domain_profile',
-    description: "Save your team's categories and guidance after the setup interview.",
+    description: "Save your team's domain guidance after the setup interview.",
     parameters: domainProfileParams,
     execute: async (args: z.infer<typeof domainProfileParams>) => json(await saveDomainProfileHandler(ctxFactory(), args)),
   });
@@ -183,7 +178,7 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
   mcp.addTool({
     name: 'save_extraction',
-    description: 'Save the candidate lesson. Birdie verifies the quote and category in code.',
+    description: 'Save the candidate lesson. Birdie verifies the quote in code.',
     parameters: saveExtractionParams,
     execute: async (args: z.infer<typeof saveExtractionParams>) => json(await requireTraceService(ctxFactory()).extract(args)),
   });
@@ -214,14 +209,13 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   mcp.addTool({
     name: 'ask_lesson',
     description:
-      'Find promoted lessons relevant to a question, optionally scoped to one person or category, for you to synthesize an answer from.',
+      'Find promoted lessons relevant to a question, optionally scoped to one person, for you to synthesize an answer from.',
     parameters: askLessonParams,
     execute: async (args: z.infer<typeof askLessonParams>) =>
       json(
         await requireLessonService(ctxFactory()).list({
           status: 'promoted',
           submitted_by: args.person,
-          typology: args.typology,
           q: args.question,
           limit: 12,
         })
@@ -264,7 +258,6 @@ export async function getDomainProfileHandler(ctx: McpContext) {
     path: ctx.mode === 'remote' ? `${readSettingsSummary().server_url}/domain` : saved!.path,
     customized: ctx.mode === 'remote' || saved!.customized,
     content: loaded.raw,
-    typology_categories: loaded.typology_categories,
   };
 }
 
@@ -298,8 +291,8 @@ export async function birdieDoctorHandler(ctx: McpContext) {
     const domain = await ctx.getDomainProfile();
     checks.push({
       name: 'domain_profile',
-      ok: domain.typology_categories.length > 0,
-      detail: `${domain.typology_categories.length} typology categories available.`,
+      ok: domain.raw.length > 0,
+      detail: 'Domain profile loaded.',
     });
   } catch (err) {
     checks.push({ name: 'domain_profile', ok: false, detail: errorMessage(err) });

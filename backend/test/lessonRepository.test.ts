@@ -23,7 +23,6 @@ describe('LessonRepository filters', () => {
       quote_verified: true,
       what_changed: whatChanged,
       why_it_matters: whyItMatters,
-      typology: 'other',
     });
     return lessons.promote(lesson.id, { reviewer: 'Sarah' });
   }
@@ -58,7 +57,6 @@ describe('LessonRepository filters', () => {
       quote_verified: true,
       what_changed: 'placeholder',
       why_it_matters: 'placeholder',
-      typology: 'other',
     });
 
     // Not promoted yet, so it shouldn't surface in a promoted-only search.
@@ -90,5 +88,28 @@ describe('LessonRepository filters', () => {
 
     expect(lessons.list({ status: 'promoted' })).toHaveLength(100);
     expect(lessons.list({ status: 'promoted', limit: 3 })).toHaveLength(3);
+  });
+
+  it('deletes a lesson and drops it from keyword search', () => {
+    const promoted = createPromotedLesson('Jane', 'uncapped indemnity', 'Capped it.', 'Risk control.');
+
+    lessons.delete(promoted.id);
+
+    expect(lessons.getById(promoted.id)).toBeUndefined();
+    expect(lessons.list({ status: 'promoted', q: 'indemnity' })).toHaveLength(0);
+  });
+
+  it('refuses to delete a lesson that is not promoted', () => {
+    const trace = traces.create({ submitted_by: 'Jane', before_text: 'a', after_text: 'b' });
+    const lesson = lessons.create({
+      trace_id: trace.id,
+      quote: 'a',
+      quote_verified: true,
+      what_changed: 'x',
+      why_it_matters: 'y',
+    });
+
+    expect(() => lessons.delete(lesson.id)).toThrow(/cannot be deleted/);
+    expect(lessons.getById(lesson.id)).toBeDefined();
   });
 });

@@ -20,7 +20,6 @@ export interface Lesson {
   quote_verified: boolean;
   what_changed: string;
   why_it_matters: string;
-  typology: string;
   playbook_alignment: 'aligned' | 'diverges' | 'not_applicable' | null;
   playbook_note: string | null;
   status: 'pending_review' | 'rejected' | 'promoted';
@@ -28,10 +27,6 @@ export interface Lesson {
   reviewed_at: string | null;
   promoted_at: string | null;
   created_at: string;
-}
-
-export interface DomainProfile {
-  typology_categories: string[];
 }
 
 export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by'> &
@@ -43,7 +38,6 @@ export function captureTrace(input: NewTrace): Promise<Trace> {
 
 export interface LessonFilters {
   status?: Lesson['status'];
-  typology?: string;
   submitted_by?: string;
   q?: string;
   limit?: number;
@@ -58,22 +52,22 @@ export function listLessons(filters: LessonFilters = {}): Promise<Lesson[]> {
   return get(`/lessons${text ? `?${text}` : ''}`);
 }
 
-export function getDomainProfile(): Promise<DomainProfile> {
-  return get('/domain');
-}
-
 export function reviewLesson(
   id: string,
-  changes: Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters' | 'typology'>> & { reject?: boolean }
+  changes: Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters'>> & { reject?: boolean }
 ): Promise<Lesson> {
   return patch(`/lessons/${id}`, changes);
 }
 
 export function promoteLesson(
   id: string,
-  payload: { reviewer: string } & Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters' | 'typology'>>
+  payload: { reviewer: string } & Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters'>>
 ): Promise<Lesson> {
   return post(`/lessons/${id}/promote`, payload);
+}
+
+export function deleteLesson(id: string): Promise<void> {
+  return del(`/lessons/${id}`);
 }
 
 async function get<T>(url: string): Promise<T> {
@@ -88,6 +82,10 @@ async function patch<T>(url: string, body: unknown): Promise<T> {
   return json(await fetch(url, request('PATCH', body)));
 }
 
+async function del(url: string): Promise<void> {
+  await throwIfError(await fetch(url, { method: 'DELETE' }));
+}
+
 function request(method: string, body: unknown): RequestInit {
   return {
     method,
@@ -97,9 +95,13 @@ function request(method: string, body: unknown): RequestInit {
 }
 
 async function json<T>(res: Response): Promise<T> {
+  await throwIfError(res);
+  return res.json() as Promise<T>;
+}
+
+async function throwIfError(res: Response): Promise<void> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
-  return res.json() as Promise<T>;
 }

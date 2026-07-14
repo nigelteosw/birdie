@@ -1,4 +1,3 @@
-import type { DomainProfile } from '../domain.js';
 import { verifyQuote } from '../extraction.js';
 import type { LessonRepository } from '../repositories/lessonRepository.js';
 import type { TraceRepository } from '../repositories/traceRepository.js';
@@ -7,8 +6,7 @@ import type { LessonWithTrace, NewExtraction, NewTrace, Trace, TraceStatus } fro
 export class TraceService {
   constructor(
     private traces: TraceRepository,
-    private lessons: LessonRepository,
-    private domainProfile: DomainProfile
+    private lessons: LessonRepository
   ) {}
 
   capture(input: NewTrace): Trace {
@@ -40,7 +38,6 @@ export class TraceService {
     if (this.lessons.getByTraceId(input.trace_id)) {
       throw new Error(`Trace ${input.trace_id} already has a lesson`);
     }
-    this.validateTypology(input.typology);
     const lesson = this.lessons.create({
       ...input,
       quote_verified: verifyQuote(input.quote, trace.before_text),
@@ -49,19 +46,9 @@ export class TraceService {
     return lesson;
   }
 
-  setDomainProfile(domainProfile: DomainProfile): void {
-    this.domainProfile = domainProfile;
-  }
-
   private requireTrace(id: string): Trace {
     const trace = this.traces.getById(id);
     if (!trace) throw new Error(`Trace not found: ${id}`);
     return trace;
-  }
-
-  private validateTypology(typology: string): void {
-    if (!this.domainProfile.typology_categories.includes(typology)) {
-      throw new Error(`Unknown category '${typology}'. Valid categories: ${this.domainProfile.typology_categories.join(', ')}`);
-    }
   }
 }

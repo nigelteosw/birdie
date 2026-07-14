@@ -12,14 +12,14 @@ export function createServer(ctx: AppContext): Express {
   app.use('/traces', tracesRouter(ctx));
   app.use('/lessons', lessonsRouter(ctx));
   app.get('/domain', (_req, res) => {
-    res.json({ content: ctx.domainProfile.raw, typology_categories: ctx.domainProfile.typology_categories });
+    res.json({ content: ctx.domainProfile.raw });
   });
   app.put('/domain', (req, res) => {
     const parsed = z.object({ content: z.string().min(1) }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     try {
       const result = ctx.updateDomainProfile(parsed.data.content);
-      res.json({ content: result.profile.raw, typology_categories: result.profile.typology_categories });
+      res.json({ content: result.profile.raw });
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }

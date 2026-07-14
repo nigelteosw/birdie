@@ -2,9 +2,9 @@ import { useState } from 'react';
 import CaptureForm from './CaptureForm.js';
 import ReviewList from './ReviewList.js';
 import MyLessons from './MyLessons.js';
-import SharedPool from './SharedPool.js';
+import KnowledgeBase from './KnowledgeBase.js';
 
-type Tab = 'review' | 'mine' | 'shared';
+type Tab = 'review' | 'mine' | 'knowledge';
 
 export default function App() {
   const [refreshSignal, setRefreshSignal] = useState(0);
@@ -16,7 +16,7 @@ export default function App() {
         <img src="/birdie-mascot.png" alt="Birdie" className="mascot" />
         <div>
           <h1>Birdie</h1>
-          <p>Capture examples. Review lessons. Add only confirmed guidance to the shared library.</p>
+          <p>Capture examples. Review lessons. Add only confirmed guidance to the knowledge base.</p>
         </div>
       </header>
       <nav className="tabs">
@@ -26,8 +26,8 @@ export default function App() {
         <button type="button" className={tab === 'mine' ? 'tab tab--active' : 'tab'} onClick={() => setTab('mine')}>
           My Lessons
         </button>
-        <button type="button" className={tab === 'shared' ? 'tab tab--active' : 'tab'} onClick={() => setTab('shared')}>
-          Shared Pool
+        <button type="button" className={tab === 'knowledge' ? 'tab tab--active' : 'tab'} onClick={() => setTab('knowledge')}>
+          Knowledge Base
         </button>
       </nav>
       {tab === 'review' && (
@@ -37,7 +37,7 @@ export default function App() {
         </>
       )}
       {tab === 'mine' && <MyLessons />}
-      {tab === 'shared' && <SharedPool />}
+      {tab === 'knowledge' && <KnowledgeBase />}
     </main>
   );
 }

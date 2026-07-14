@@ -1,6 +1,6 @@
 ---
 name: birdie-mentor
-description: TRIGGER — capture proactively, without being asked, the moment someone corrects, edits, or improves another person's code, draft, or document anywhere in the conversation (a PR review, an inline fix to someone else's work, "here's how I'd rewrite what Lauren sent" — any before/after where one named person improved another's work). Also TRIGGER proactively whenever the user asks how a specific named person would approach, handle, or think about something ("how would Sarah tackle this", "what would Amir do here", "has anyone dealt with this before") — check the lesson pool before answering from general knowledge alone. Also use for first-time setup when Birdie says it isn't configured, for listing/reviewing/promoting pending lessons, and for browsing or searching the shared library of reviewed lessons.
+description: TRIGGER — capture proactively, without being asked, the moment someone corrects, edits, or improves another person's code, draft, or document anywhere in the conversation (a PR review, an inline fix to someone else's work, "here's how I'd rewrite what Lauren sent" — any before/after where one named person improved another's work). Also TRIGGER proactively whenever the user asks how a specific named person would approach, handle, or think about something ("how would Sarah tackle this", "what would Amir do here", "has anyone dealt with this before") — check the lesson pool before answering from general knowledge alone. Also use for first-time setup when Birdie says it isn't configured, for listing/reviewing/promoting pending lessons, and for browsing or searching the knowledge base of reviewed lessons.
 ---
 
 # Birdie Mentor
@@ -13,7 +13,7 @@ If Birdie says it is not set up, use the `setup-birdie` MCP prompt. Ask whether 
 
 Also ask the user's own name and pass it as `user_name` on that same `complete_setup` call (or `update_birdie_settings` later). Birdie remembers it in `~/.birdie/config.json`, so you don't need to ask again in future conversations — read it back any time via `get_birdie_settings` and use it as the default `submitted_by` when the user is capturing their own edit, or to tell "the user" apart from a named person they're asking about in `ask_lesson`.
 
-Offer to customize categories. If the user wants that, ask what field they work in and what kinds of edits matter, then call `save_domain_profile` with a markdown profile containing `# Domain`, `# Typology`, and `# What counts as mentorship-worthy`. In shared-server mode this updates the team's server profile for every connected assistant; in local mode it only updates that user's local profile. If the domain profile still reads like the generic default (a legal-practice template), that's a sign no one has customized it yet — flag it and offer to fix it instead of assuming it fits.
+Offer to customize the domain profile. If the user wants that, ask what field they work in and what kinds of edits matter, then call `save_domain_profile` with a markdown profile containing `# Domain` and `# What counts as mentorship-worthy`. In shared-server mode this updates the team's server profile for every connected assistant; in local mode it only updates that user's local profile. If the domain profile still reads like the generic default (a legal-practice template), that's a sign no one has customized it yet — flag it and offer to fix it instead of assuming it fits.
 
 ## Proactive Capture
 
@@ -43,11 +43,11 @@ Pass the user's question as `question`, the named person (if any) as `person`, a
 3. Review with `list_lessons`, `review_lesson`, and `promote_lesson`.
 4. Ask the pool with `ask_lesson` (or the `ask-lesson` prompt) — see Proactive Retrieval above — do this unprompted too.
 
-Promoted lessons are also browsable by reviewers on the web review queue (My Lessons / Shared Pool tabs).
+Promoted lessons are also browsable by reviewers on the web review queue (My Lessons / Knowledge Base tabs).
 
 ## Settings
 
-When the user asks to inspect setup, switch between local and shared-server mode, connect multiple assistants, troubleshoot the backend, change categories, or update their remembered name, use the `configure-birdie` prompt. For direct tool use, call `get_birdie_settings`, `update_birdie_settings` (accepts `user_name` on its own, no `mode` required), `get_domain_profile`, `save_domain_profile`, or `birdie_doctor`.
+When the user asks to inspect setup, switch between local and shared-server mode, connect multiple assistants, troubleshoot the backend, change the domain profile, or update their remembered name, use the `configure-birdie` prompt. For direct tool use, call `get_birdie_settings`, `update_birdie_settings` (accepts `user_name` on its own, no `mode` required), `get_domain_profile`, `save_domain_profile`, or `birdie_doctor`.
 
 ## Surfacing the review queue
 

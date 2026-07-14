@@ -64,7 +64,6 @@ function migrate(db: SqliteDb): void {
       quote_verified INTEGER NOT NULL,
       what_changed TEXT NOT NULL,
       why_it_matters TEXT NOT NULL,
-      typology TEXT NOT NULL,
       playbook_alignment TEXT,
       playbook_note TEXT,
       status TEXT NOT NULL DEFAULT 'pending_review',
@@ -78,7 +77,8 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
-  dropLegacyRoleColumns(db);
+  dropColumnsIfPresent(db, 'traces', ['submitted_by_role', 'junior_name', 'senior_name']);
+  dropColumnsIfPresent(db, 'lessons', ['typology']);
   setUpLessonsFts(db);
 }
 
@@ -103,12 +103,19 @@ function setUpLessonsFts(db: SqliteDb): void {
   }
 }
 
-function dropLegacyRoleColumns(db: SqliteDb): void {
-  const columns = db.prepare('PRAGMA table_info(traces)').all() as Array<{ name: string }>;
-  const names = new Set(columns.map((column) => column.name));
-  for (const column of ['submitted_by_role', 'junior_name', 'senior_name']) {
+// Best-effort schema cleanup. DROP COLUMN needs SQLite 3.35+; on an older
+// build this silently leaves the column in place rather than crashing
+// openDb() for every existing install.
+function dropColumnsIfPresent(db: SqliteDb, table: string, columns: string[]): void {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const names = new Set(existing.map((column) => column.name));
+  for (const column of columns) {
     if (names.has(column)) {
-      db.exec(`ALTER TABLE traces DROP COLUMN ${column}`);
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      } catch {
+        // DROP COLUMN unsupported on this SQLite build — leave the column in place.
+      }
     }
   }
 }

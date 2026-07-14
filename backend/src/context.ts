@@ -1,5 +1,5 @@
 import { openDb } from './db.js';
-import { loadDomainProfile, parseTypologyCategories, type DomainProfile } from './domain.js';
+import { loadDomainProfile, type DomainProfile } from './domain.js';
 import { domainProfilePath, localDbPath, saveDomainProfileAt } from './config.js';
 import { LessonRepository } from './repositories/lessonRepository.js';
 import { TraceRepository } from './repositories/traceRepository.js';
@@ -22,8 +22,8 @@ export function buildLocalContext(dbPath: string, domainPath: string): AppContex
   const traceRepo = new TraceRepository(db);
   const lessonRepo = new LessonRepository(db);
   let domainProfile = loadDomainProfile(domainPath);
-  const traceService = new TraceService(traceRepo, lessonRepo, domainProfile);
-  const lessonService = new LessonService(lessonRepo, traceRepo, domainProfile);
+  const traceService = new TraceService(traceRepo, lessonRepo);
+  const lessonService = new LessonService(lessonRepo, traceRepo);
   return {
     traceService,
     lessonService,
@@ -31,13 +31,8 @@ export function buildLocalContext(dbPath: string, domainPath: string): AppContex
       return domainProfile;
     },
     updateDomainProfile(content) {
-      if (parseTypologyCategories(content).length === 0) {
-        throw new Error('A domain profile needs at least one category under # Typology.');
-      }
       const result = saveDomainProfileAt(domainPath, content);
       domainProfile = loadDomainProfile(domainPath);
-      traceService.setDomainProfile(domainProfile);
-      lessonService.setDomainProfile(domainProfile);
       return { ...result, profile: domainProfile };
     },
   };

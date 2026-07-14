@@ -67,4 +67,10 @@ describe('config', () => {
     expect(readFileSync(result.path, 'utf-8')).toContain('# Domain');
     expect(readDomainProfileFile()).toMatchObject({ customized: true, path: result.path });
   });
+
+  it('rejects an empty or whitespace-only domain profile', () => {
+    expect(() => saveDomainProfile('')).toThrow(/cannot be empty/);
+    expect(() => saveDomainProfile('   \n  ')).toThrow(/cannot be empty/);
+    expect(readDomainProfileFile().customized).toBe(false);
+  });
 });

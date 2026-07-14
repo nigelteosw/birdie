@@ -116,8 +116,8 @@ async function runDoctor(): Promise<void> {
   const domain = loadDomainProfile(summary.domainPath);
   checks.push({
     name: 'domain',
-    ok: domain.typology_categories.length > 0,
-    detail: `${domain.typology_categories.length} categories from ${existsSync(summary.domainPath) ? summary.domainPath : 'default profile'}`,
+    ok: domain.raw.length > 0,
+    detail: `Domain profile loaded from ${existsSync(summary.domainPath) ? summary.domainPath : 'default profile'}`,
   });
 
   for (const check of checks) {

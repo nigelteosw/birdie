@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDomainProfile, listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
+import { listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
 
 interface Props {
   refreshSignal: number;
@@ -7,13 +7,11 @@ interface Props {
 
 export default function ReviewList({ refreshSignal }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [typologies, setTypologies] = useState<string[]>([]);
   const [reviewerById, setReviewerById] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   async function refresh() {
-    const [profile, pending] = await Promise.all([getDomainProfile(), listLessons({ status: 'pending_review' })]);
-    setTypologies(profile.typology_categories);
+    const pending = await listLessons({ status: 'pending_review' });
     setLessons(pending);
   }
 
@@ -36,7 +34,7 @@ export default function ReviewList({ refreshSignal }: Props) {
     }
     await act(async () => {
       await promoteLesson(lesson.id, { reviewer, ...editableFields(lesson) });
-      setMessage('Added to the shared library.');
+      setMessage('Added to the knowledge base.');
     });
   }
 
@@ -56,7 +54,7 @@ export default function ReviewList({ refreshSignal }: Props) {
     }
   }
 
-  function updateField(id: string, field: 'quote' | 'what_changed' | 'why_it_matters' | 'typology', value: string) {
+  function updateField(id: string, field: 'quote' | 'what_changed' | 'why_it_matters', value: string) {
     setLessons((prev) => prev.map((lesson) => (lesson.id === id ? { ...lesson, [field]: value } : lesson)));
   }
 
@@ -102,16 +100,6 @@ export default function ReviewList({ refreshSignal }: Props) {
               />
             </label>
             <label>
-              Category
-              <select value={lesson.typology} onChange={(event) => updateField(lesson.id, 'typology', event.target.value)}>
-                {typologies.map((typology) => (
-                  <option key={typology} value={typology}>
-                    {typology}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
               Reviewer
               <input
                 value={reviewerById[lesson.id] ?? ''}
@@ -121,7 +109,7 @@ export default function ReviewList({ refreshSignal }: Props) {
             <p className="privacy">Remove client names, matter names, and other private details before adding this lesson.</p>
             <div className="actions">
               <button type="button" onClick={() => handlePromote(lesson)}>
-                Add to shared library
+                Add to knowledge base
               </button>
               <button type="button" className="secondary" onClick={() => handleSaveDraft(lesson)}>
                 Save as Draft
@@ -142,6 +130,5 @@ function editableFields(lesson: Lesson) {
     quote: lesson.quote,
     what_changed: lesson.what_changed,
     why_it_matters: lesson.why_it_matters,
-    typology: lesson.typology,
   };
 }

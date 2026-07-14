@@ -31,7 +31,6 @@ describe('remote services', () => {
       quote: 'before',
       what_changed: 'Changed it.',
       why_it_matters: 'Reason.',
-      typology: 'other',
     });
     await traces.skip('trace-2', 'Not useful.');
 
@@ -55,10 +54,8 @@ describe('remote services', () => {
 
   it('reads and updates the shared domain profile', async () => {
     const domain = new RemoteDomainService('http://birdie.test');
-    expect(await domain.get()).toMatchObject({ typology_categories: ['engineering'] });
-    expect(await domain.save('# Domain\nEngineering\n\n# Typology\n- engineering: Reviews.')).toMatchObject({
-      typology_categories: ['engineering'],
-    });
+    expect(await domain.get()).toMatchObject({ raw: '# Domain\nEngineering' });
+    expect(await domain.save('# Domain\nEngineering')).toMatchObject({ raw: '# Domain\nEngineering' });
     expect(calls.map((call) => `${call.init?.method ?? 'GET'} ${call.url}`)).toEqual([
       'GET http://birdie.test/domain',
       'PUT http://birdie.test/domain',
@@ -68,7 +65,7 @@ describe('remote services', () => {
 
 function responseFor(url: string, init?: RequestInit): unknown {
   if (url.endsWith('/domain')) {
-    return { content: '# Domain\nEngineering\n\n# Typology\n- engineering: Reviews.', typology_categories: ['engineering'] };
+    return { content: '# Domain\nEngineering' };
   }
   if (url.includes('/lessons') && !url.includes('/promote')) return [];
   if (url.includes('/traces') && init?.method === 'POST' && !url.includes('/extract')) {

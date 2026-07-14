@@ -65,4 +65,61 @@ describe('db migration', () => {
     expect(columns).toContain('submitted_by');
     db.close();
   });
+
+  it('drops the legacy typology column from an existing lessons table', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'birdie-db-migration-typology-'));
+    const dbPath = join(dir, 'birdie.db');
+
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE traces (
+        id TEXT PRIMARY KEY,
+        submitted_by TEXT NOT NULL,
+        before_text TEXT NOT NULL,
+        after_text TEXT NOT NULL,
+        playbook_ref TEXT,
+        playbook_text TEXT,
+        context_note TEXT,
+        source TEXT NOT NULL DEFAULT 'manual',
+        status TEXT NOT NULL DEFAULT 'captured',
+        skip_reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+      CREATE TABLE lessons (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL REFERENCES traces(id),
+        quote TEXT NOT NULL,
+        quote_verified INTEGER NOT NULL,
+        what_changed TEXT NOT NULL,
+        why_it_matters TEXT NOT NULL,
+        typology TEXT NOT NULL,
+        playbook_alignment TEXT,
+        playbook_note TEXT,
+        status TEXT NOT NULL DEFAULT 'pending_review',
+        reviewer TEXT,
+        reviewed_at TEXT,
+        promoted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+    `);
+    legacy
+      .prepare(`INSERT INTO traces (id, submitted_by, before_text, after_text) VALUES ('trace-1', 'Jane', 'before', 'after')`)
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO lessons (id, trace_id, quote, quote_verified, what_changed, why_it_matters, typology)
+         VALUES ('lesson-1', 'trace-1', 'quote', 1, 'changed', 'why', 'other')`
+      )
+      .run();
+    legacy.close();
+
+    const db = openDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(lessons)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+    expect(columns).not.toContain('typology');
+    const row = db.prepare('SELECT * FROM lessons WHERE id = ?').get('lesson-1') as { quote: string };
+    expect(row.quote).toBe('quote');
+    db.close();
+  });
 });

@@ -3,7 +3,6 @@ import type { DomainProfile } from '../domain.js';
 
 interface DomainResponse {
   content: string;
-  typology_categories: string[];
 }
 
 export class RemoteDomainService {
@@ -24,5 +23,5 @@ export class RemoteDomainService {
 }
 
 function toDomainProfile(response: DomainResponse): DomainProfile {
-  return { raw: response.content, typology_categories: response.typology_categories };
+  return { raw: response.content };
 }

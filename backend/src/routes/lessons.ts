@@ -4,7 +4,6 @@ import type { AppContext } from '../context.js';
 
 const listQuery = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
-  typology: z.string().optional(),
   playbook_ref: z.string().optional(),
   submitted_by: z.string().optional(),
   q: z.string().optional(),
@@ -14,7 +13,6 @@ const editBody = z.object({
   quote: z.string().min(1).optional(),
   what_changed: z.string().min(1).optional(),
   why_it_matters: z.string().min(1).optional(),
-  typology: z.string().min(1).optional(),
   reject: z.boolean().optional(),
 });
 const promoteBody = z.object({
@@ -22,7 +20,6 @@ const promoteBody = z.object({
   quote: z.string().min(1).optional(),
   what_changed: z.string().min(1).optional(),
   why_it_matters: z.string().min(1).optional(),
-  typology: z.string().min(1).optional(),
 });
 
 export function lessonsRouter(ctx: AppContext): Router {
@@ -59,6 +56,15 @@ export function lessonsRouter(ctx: AppContext): Router {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     try {
       res.json(ctx.lessonService.promote(req.params.id, parsed.data));
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.delete('/:id', (req, res) => {
+    try {
+      ctx.lessonService.delete(req.params.id);
+      res.status(204).end();
     } catch (err) {
       sendServiceError(res, err);
     }

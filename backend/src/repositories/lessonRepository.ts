@@ -23,9 +23,9 @@ export class LessonRepository {
       .prepare(
         `INSERT INTO lessons (
           id, trace_id, quote, quote_verified, what_changed, why_it_matters,
-          typology, playbook_alignment, playbook_note, status
+          playbook_alignment, playbook_note, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
+          ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
         )`
       )
       .run(
@@ -35,7 +35,6 @@ export class LessonRepository {
         input.quote_verified ? 1 : 0,
         input.what_changed,
         input.why_it_matters,
-        input.typology,
         input.playbook_alignment ?? null,
         input.playbook_note ?? null
       );
@@ -72,14 +71,13 @@ export class LessonRepository {
       quote_verified: changes.quote_verified ?? current.quote_verified,
       what_changed: changes.what_changed ?? current.what_changed,
       why_it_matters: changes.why_it_matters ?? current.why_it_matters,
-      typology: changes.typology ?? current.typology,
       status: changes.reject ? 'rejected' : current.status,
     };
     this.db
       .prepare(
         `UPDATE lessons
          SET quote = ?, quote_verified = ?, what_changed = ?,
-             why_it_matters = ?, typology = ?, status = ?,
+             why_it_matters = ?, status = ?,
              reviewed_at = CASE WHEN ? = 'rejected' THEN ? ELSE reviewed_at END
          WHERE id = ?`
       )
@@ -88,7 +86,6 @@ export class LessonRepository {
         next.quote_verified ? 1 : 0,
         next.what_changed,
         next.why_it_matters,
-        next.typology,
         next.status,
         next.status,
         new Date().toISOString(),
@@ -112,14 +109,13 @@ export class LessonRepository {
       quote_verified: payload.quote_verified ?? current.quote_verified,
       what_changed: payload.what_changed ?? current.what_changed,
       why_it_matters: payload.why_it_matters ?? current.why_it_matters,
-      typology: payload.typology ?? current.typology,
     };
     const now = new Date().toISOString();
     this.db
       .prepare(
         `UPDATE lessons
          SET quote = ?, quote_verified = ?, what_changed = ?,
-             why_it_matters = ?, typology = ?, status = 'promoted',
+             why_it_matters = ?, status = 'promoted',
              reviewer = ?, reviewed_at = ?, promoted_at = ?
          WHERE id = ?`
       )
@@ -128,7 +124,6 @@ export class LessonRepository {
         next.quote_verified ? 1 : 0,
         next.what_changed,
         next.why_it_matters,
-        next.typology,
         payload.reviewer.trim(),
         now,
         now,
@@ -138,9 +133,24 @@ export class LessonRepository {
     return this.getById(id)!;
   }
 
-  private syncFts(id: string, quote: string, whatChanged: string, whyItMatters: string): void {
+  delete(id: string): void {
+    const current = this.getById(id);
+    if (!current) throw new Error(`Lesson not found: ${id}`);
+    if (current.status !== 'promoted') {
+      throw new Error(`Lesson ${id} cannot be deleted from status '${current.status}'`);
+    }
+    this.db.prepare('DELETE FROM lessons WHERE id = ?').run(id);
+    this.deleteFts(id);
+  }
+
+  private deleteFts(id: string): void {
     if (!this.ftsAvailable) return;
     this.db.prepare('DELETE FROM lessons_fts WHERE id = ?').run(id);
+  }
+
+  private syncFts(id: string, quote: string, whatChanged: string, whyItMatters: string): void {
+    if (!this.ftsAvailable) return;
+    this.deleteFts(id);
     this.db
       .prepare('INSERT INTO lessons_fts (id, quote, what_changed, why_it_matters) VALUES (?, ?, ?, ?)')
       .run(id, quote, whatChanged, whyItMatters);
@@ -158,10 +168,10 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
   const clauses: string[] = [];
   const params: string[] = [];
   let usesFts = false;
-  for (const key of ['status', 'typology', 'playbook_ref', 'submitted_by'] as const) {
+  for (const key of ['status', 'playbook_ref', 'submitted_by'] as const) {
     const value = filters[key];
     if (value) {
-      clauses.push(key === 'status' || key === 'typology' ? `l.${key} = ?` : `t.${key} = ?`);
+      clauses.push(key === 'status' ? `l.${key} = ?` : `t.${key} = ?`);
       params.push(value);
     }
   }

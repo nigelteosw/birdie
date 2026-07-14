@@ -74,10 +74,10 @@ describe('mcp context setup', () => {
   });
 
   it('reads domain profile from MCP tools', async () => {
-    saveDomainProfile('# Domain\nEngineering\n\n# Typology\n- design_feedback: Feedback on design.\n');
+    saveDomainProfile('# Domain\nEngineering\n\n# What counts as mentorship-worthy\nFeedback on design.\n');
     expect(await getDomainProfileHandler(buildMcpContext())).toMatchObject({
       customized: true,
-      typology_categories: ['design_feedback'],
+      content: '# Domain\nEngineering\n\n# What counts as mentorship-worthy\nFeedback on design.\n',
     });
   });
 });
