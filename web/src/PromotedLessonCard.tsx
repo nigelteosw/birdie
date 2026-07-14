@@ -19,7 +19,7 @@ export default function PromotedLessonCard({ lesson, onDelete }: Props) {
         <CardHeader>
           <div className="library-card__heading">
             <div className="library-card__icon"><Quote size={17} /></div>
-            <div><p className="overline">Trusted guidance</p><CardTitle>{lesson.playbook_ref ?? 'Promoted lesson'}</CardTitle></div>
+            <div><p className="overline">Trusted guidance</p><CardTitle>Promoted lesson</CardTitle></div>
           </div>
           <Badge variant="success"><CheckCircle2 size={13} /> Promoted</Badge>
         </CardHeader>

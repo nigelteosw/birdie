@@ -6,8 +6,6 @@ const createTraceBody = z.object({
   before_text: z.string().min(1),
   after_text: z.string().min(1),
   submitted_by: z.string().min(1),
-  playbook_ref: z.string().optional(),
-  playbook_text: z.string().optional(),
   context_note: z.string().optional(),
 });
 
@@ -17,8 +15,6 @@ const extractBody = z.object({
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),
-  playbook_alignment: z.enum(['aligned', 'diverges', 'not_applicable']).optional(),
-  playbook_note: z.string().optional(),
 });
 
 export function tracesRouter(ctx: AppContext): Router {

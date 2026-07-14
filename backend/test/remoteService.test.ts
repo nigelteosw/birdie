@@ -43,11 +43,11 @@ describe('remote services', () => {
 
   it('maps lesson methods to REST routes', async () => {
     const lessons = new RemoteLessonService('http://birdie.test');
-    await lessons.list({ status: 'promoted', playbook_ref: 'PB-1' });
+    await lessons.list({ status: 'promoted' });
     await lessons.promote('lesson-1', { reviewer: 'Sarah' });
 
     expect(calls.map((call) => `${call.init?.method ?? 'GET'} ${call.url}`)).toEqual([
-      'GET http://birdie.test/lessons?status=promoted&playbook_ref=PB-1',
+      'GET http://birdie.test/lessons?status=promoted',
       'POST http://birdie.test/lessons/lesson-1/promote',
     ]);
   });

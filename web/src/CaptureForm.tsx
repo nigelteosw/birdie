@@ -13,8 +13,6 @@ export default function CaptureForm({ onCaptured }: Props) {
   const [beforeText, setBeforeText] = useState('');
   const [afterText, setAfterText] = useState('');
   const [submittedBy, setSubmittedBy] = useState('');
-  const [playbookRef, setPlaybookRef] = useState('');
-  const [playbookText, setPlaybookText] = useState('');
   const [contextNote, setContextNote] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -28,8 +26,6 @@ export default function CaptureForm({ onCaptured }: Props) {
         before_text: beforeText,
         after_text: afterText,
         submitted_by: submittedBy,
-        playbook_ref: playbookRef || undefined,
-        playbook_text: playbookText || undefined,
         context_note: contextNote || undefined,
       });
       setBeforeText('');
@@ -54,12 +50,6 @@ export default function CaptureForm({ onCaptured }: Props) {
         </Field>
         <Field label="Submitted by">
           <Input value={submittedBy} onChange={(event) => setSubmittedBy(event.target.value)} placeholder="e.g. Jane" required />
-        </Field>
-        <Field label="Playbook reference" optional>
-          <Input value={playbookRef} onChange={(event) => setPlaybookRef(event.target.value)} placeholder="e.g. Intake guide §3" />
-        </Field>
-        <Field label="Playbook text" optional className="span-full">
-          <Textarea value={playbookText} onChange={(event) => setPlaybookText(event.target.value)} rows={3} />
         </Field>
         <Field label="Helpful context" optional className="span-full">
           <Textarea value={contextNote} onChange={(event) => setContextNote(event.target.value)} rows={2} />

@@ -22,10 +22,9 @@ export class LessonRepository {
     this.db
       .prepare(
         `INSERT INTO lessons (
-          id, trace_id, quote, quote_verified, what_changed, why_it_matters,
-          playbook_alignment, playbook_note, status
+          id, trace_id, quote, quote_verified, what_changed, why_it_matters, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
+          ?, ?, ?, ?, ?, ?, 'pending_review'
         )`
       )
       .run(
@@ -34,9 +33,7 @@ export class LessonRepository {
         input.quote,
         input.quote_verified ? 1 : 0,
         input.what_changed,
-        input.why_it_matters,
-        input.playbook_alignment ?? null,
-        input.playbook_note ?? null
+        input.why_it_matters
       );
     this.syncFts(id, input.quote, input.what_changed, input.why_it_matters);
     return this.getById(id)!;
@@ -158,7 +155,7 @@ export class LessonRepository {
 }
 
 function lessonSelect(usesFts = false): string {
-  return `SELECT l.*, t.submitted_by, t.playbook_ref
+  return `SELECT l.*, t.submitted_by
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id
           ${usesFts ? 'JOIN lessons_fts ON lessons_fts.id = l.id' : ''}`;
@@ -168,7 +165,7 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
   const clauses: string[] = [];
   const params: string[] = [];
   let usesFts = false;
-  for (const key of ['status', 'playbook_ref', 'submitted_by'] as const) {
+  for (const key of ['status', 'submitted_by'] as const) {
     const value = filters[key];
     if (value) {
       clauses.push(key === 'status' ? `l.${key} = ?` : `t.${key} = ?`);

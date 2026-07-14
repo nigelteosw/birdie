@@ -20,8 +20,6 @@ describe('db migration', () => {
         senior_name TEXT,
         before_text TEXT NOT NULL,
         after_text TEXT NOT NULL,
-        playbook_ref TEXT,
-        playbook_text TEXT,
         context_note TEXT,
         source TEXT NOT NULL DEFAULT 'manual',
         status TEXT NOT NULL DEFAULT 'captured',
@@ -66,7 +64,7 @@ describe('db migration', () => {
     db.close();
   });
 
-  it('drops the legacy typology column from an existing lessons table', () => {
+  it('drops the legacy typology and playbook columns from an existing lessons table', () => {
     const dir = mkdtempSync(join(tmpdir(), 'birdie-db-migration-typology-'));
     const dbPath = join(dir, 'birdie.db');
 
@@ -103,21 +101,31 @@ describe('db migration', () => {
       );
     `);
     legacy
-      .prepare(`INSERT INTO traces (id, submitted_by, before_text, after_text) VALUES ('trace-1', 'Jane', 'before', 'after')`)
+      .prepare(
+        `INSERT INTO traces (id, submitted_by, before_text, after_text, playbook_ref, playbook_text)
+         VALUES ('trace-1', 'Jane', 'before', 'after', 'PB-1', 'Cite your sources.')`
+      )
       .run();
     legacy
       .prepare(
-        `INSERT INTO lessons (id, trace_id, quote, quote_verified, what_changed, why_it_matters, typology)
-         VALUES ('lesson-1', 'trace-1', 'quote', 1, 'changed', 'why', 'other')`
+        `INSERT INTO lessons (id, trace_id, quote, quote_verified, what_changed, why_it_matters, typology, playbook_alignment, playbook_note)
+         VALUES ('lesson-1', 'trace-1', 'quote', 1, 'changed', 'why', 'other', 'diverges', 'Ignored the playbook rule.')`
       )
       .run();
     legacy.close();
 
     const db = openDb(dbPath);
-    const columns = (db.prepare('PRAGMA table_info(lessons)').all() as Array<{ name: string }>).map(
+    const traceColumns = (db.prepare('PRAGMA table_info(traces)').all() as Array<{ name: string }>).map(
       (column) => column.name
     );
-    expect(columns).not.toContain('typology');
+    expect(traceColumns).not.toContain('playbook_ref');
+    expect(traceColumns).not.toContain('playbook_text');
+    const lessonColumns = (db.prepare('PRAGMA table_info(lessons)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+    expect(lessonColumns).not.toContain('typology');
+    expect(lessonColumns).not.toContain('playbook_alignment');
+    expect(lessonColumns).not.toContain('playbook_note');
     const row = db.prepare('SELECT * FROM lessons WHERE id = ?').get('lesson-1') as { quote: string };
     expect(row.quote).toBe('quote');
     db.close();

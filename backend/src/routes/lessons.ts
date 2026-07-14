@@ -4,7 +4,6 @@ import type { AppContext } from '../context.js';
 
 const listQuery = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
-  playbook_ref: z.string().optional(),
   submitted_by: z.string().optional(),
   q: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),

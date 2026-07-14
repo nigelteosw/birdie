@@ -62,8 +62,6 @@ const captureTraceParams = z.object({
   before_text: z.string().min(1),
   after_text: z.string().min(1),
   submitted_by: z.string().min(1).optional(),
-  playbook_ref: z.string().optional(),
-  playbook_text: z.string().optional(),
   context_note: z.string().optional(),
 });
 const getTraceParams = z.object({ trace_id: z.string().min(1) });
@@ -73,12 +71,9 @@ const saveExtractionParams = z.object({
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),
-  playbook_alignment: z.enum(['aligned', 'diverges', 'not_applicable']).optional(),
-  playbook_note: z.string().optional(),
 });
 const listLessonsParams = z.object({
   status: z.enum(['pending_review', 'rejected', 'promoted']).optional(),
-  playbook_ref: z.string().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 const reviewLessonParams = z.object({

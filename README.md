@@ -168,7 +168,7 @@ git add bin/birdie.mjs
 - `GET /traces/:id`
 - `POST /traces/:id/skip`
 - `POST /traces/:id/extract`
-- `GET /lessons` — accepts `status`, `typology`, `playbook_ref`, `submitted_by`, `q`, and `limit` (1–100, default 100). Keyword results use FTS relevance when available.
+- `GET /lessons` — accepts `status`, `submitted_by`, `q`, and `limit` (1–100, default 100). Keyword results use FTS relevance when available.
 - `GET /lessons/:id`
 - `PATCH /lessons/:id`
 - `POST /lessons/:id/promote`

@@ -65191,8 +65191,6 @@ function migrate(db) {
       submitted_by TEXT NOT NULL,
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
-      playbook_ref TEXT,
-      playbook_text TEXT,
       context_note TEXT,
       source TEXT NOT NULL DEFAULT 'manual',
       status TEXT NOT NULL DEFAULT 'captured',
@@ -65207,8 +65205,6 @@ function migrate(db) {
       quote_verified INTEGER NOT NULL,
       what_changed TEXT NOT NULL,
       why_it_matters TEXT NOT NULL,
-      playbook_alignment TEXT,
-      playbook_note TEXT,
       status TEXT NOT NULL DEFAULT 'pending_review',
       reviewer TEXT,
       reviewed_at TEXT,
@@ -65220,8 +65216,8 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
-  dropColumnsIfPresent(db, "traces", ["submitted_by_role", "junior_name", "senior_name"]);
-  dropColumnsIfPresent(db, "lessons", ["typology"]);
+  dropColumnsIfPresent(db, "traces", ["submitted_by_role", "junior_name", "senior_name", "playbook_ref", "playbook_text"]);
+  dropColumnsIfPresent(db, "lessons", ["typology", "playbook_alignment", "playbook_note"]);
   setUpLessonsFts(db);
 }
 function ftsAvailable(db) {
@@ -65259,7 +65255,7 @@ A general legal practice reviewing contracts and client work product.
 
 # What counts as mentorship-worthy
 Capture edits that reflect a real judgment call - a risk tradeoff, a
-playbook rule being applied, or a drafting principle. Skip pure typo
+documented rule being applied, or a drafting principle. Skip pure typo
 fixes, whitespace/formatting-only changes, and edits with no
 identifiable reasoning behind them.
 `;
@@ -65380,10 +65376,9 @@ var LessonRepository = class {
     const id = randomUUID();
     this.db.prepare(
       `INSERT INTO lessons (
-          id, trace_id, quote, quote_verified, what_changed, why_it_matters,
-          playbook_alignment, playbook_note, status
+          id, trace_id, quote, quote_verified, what_changed, why_it_matters, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review'
+          ?, ?, ?, ?, ?, ?, 'pending_review'
         )`
     ).run(
       id,
@@ -65391,9 +65386,7 @@ var LessonRepository = class {
       input.quote,
       input.quote_verified ? 1 : 0,
       input.what_changed,
-      input.why_it_matters,
-      input.playbook_alignment ?? null,
-      input.playbook_note ?? null
+      input.why_it_matters
     );
     this.syncFts(id, input.quote, input.what_changed, input.why_it_matters);
     return this.getById(id);
@@ -65498,7 +65491,7 @@ var LessonRepository = class {
   }
 };
 function lessonSelect(usesFts = false) {
-  return `SELECT l.*, t.submitted_by, t.playbook_ref
+  return `SELECT l.*, t.submitted_by
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id
           ${usesFts ? "JOIN lessons_fts ON lessons_fts.id = l.id" : ""}`;
@@ -65507,7 +65500,7 @@ function filterWhere(filters, ftsAvailable2) {
   const clauses = [];
   const params = [];
   let usesFts = false;
-  for (const key of ["status", "playbook_ref", "submitted_by"]) {
+  for (const key of ["status", "submitted_by"]) {
     const value = filters[key];
     if (value) {
       clauses.push(key === "status" ? `l.${key} = ?` : `t.${key} = ?`);
@@ -65550,17 +65543,15 @@ var TraceRepository = class {
     const id = randomUUID2();
     this.db.prepare(
       `INSERT INTO traces (
-          id, submitted_by, before_text, after_text, playbook_ref, playbook_text, context_note, source, status
+          id, submitted_by, before_text, after_text, context_note, source, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, 'captured'
+          ?, ?, ?, ?, ?, ?, 'captured'
         )`
     ).run(
       id,
       input.submitted_by,
       input.before_text,
       input.after_text,
-      input.playbook_ref ?? null,
-      input.playbook_text ?? null,
       input.context_note ?? null,
       input.source ?? "manual"
     );
@@ -65712,7 +65703,6 @@ init_external();
 var import_express = __toESM(require_express2(), 1);
 var listQuery = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
-  playbook_ref: external_exports.string().optional(),
   submitted_by: external_exports.string().optional(),
   q: external_exports.string().optional(),
   limit: external_exports.coerce.number().int().min(1).max(100).optional()
@@ -65784,8 +65774,6 @@ var createTraceBody = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
   submitted_by: external_exports.string().min(1),
-  playbook_ref: external_exports.string().optional(),
-  playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
 });
 var statusQuery = external_exports.enum(["captured", "extracted", "skipped"]).optional();
@@ -65793,9 +65781,7 @@ var skipBody = external_exports.object({ reason: external_exports.string().min(1
 var extractBody = external_exports.object({
   quote: external_exports.string().min(1),
   what_changed: external_exports.string().min(1),
-  why_it_matters: external_exports.string().min(1),
-  playbook_alignment: external_exports.enum(["aligned", "diverges", "not_applicable"]).optional(),
-  playbook_note: external_exports.string().optional()
+  why_it_matters: external_exports.string().min(1)
 });
 function tracesRouter(ctx) {
   const router = (0, import_express2.Router)();
@@ -77928,10 +77914,9 @@ ${profile.raw}
 Steps:
 1. Call get_trace with trace_id="${traceId}".
 2. Decide if the example is mentorship-worthy using the guidance above. If not, call skip_extraction with a short reason and stop.
-3. If it is worth capturing, prepare quote, what_changed, why_it_matters, and optional playbook_alignment/playbook_note.
+3. If it is worth capturing, prepare quote, what_changed, and why_it_matters.
 4. The quote must be copied verbatim from before_text. Birdie checks this in code.
-5. If the edit differs from the playbook, say that directly in playbook_note.
-6. Call save_extraction.`;
+5. Call save_extraction.`;
 }
 function buildAskLessonPrompt(question, person) {
   return `Answer this question using Birdie's promoted lessons: "${question}"${person ? ` (scoped to lessons submitted by ${person})` : ""}.
@@ -77948,7 +77933,6 @@ var copy = {
   promote: "add to the knowledge base",
   pendingReview: "waiting for review",
   quoteNotVerified: "We couldn't find this exact wording in the original text. Please check it before adding this lesson.",
-  playbookDiverges: "This edit differs from your playbook. Confirm this is intentional before adding it.",
   privacyReminder: "Before adding this lesson, remove client names, matter names, and other details that should not be shared."
 };
 
@@ -77999,8 +77983,6 @@ var captureTraceParams = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
   submitted_by: external_exports.string().min(1).optional(),
-  playbook_ref: external_exports.string().optional(),
-  playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
 });
 var getTraceParams = external_exports.object({ trace_id: external_exports.string().min(1) });
@@ -78009,13 +77991,10 @@ var saveExtractionParams = external_exports.object({
   trace_id: external_exports.string().min(1),
   quote: external_exports.string().min(1),
   what_changed: external_exports.string().min(1),
-  why_it_matters: external_exports.string().min(1),
-  playbook_alignment: external_exports.enum(["aligned", "diverges", "not_applicable"]).optional(),
-  playbook_note: external_exports.string().optional()
+  why_it_matters: external_exports.string().min(1)
 });
 var listLessonsParams = external_exports.object({
   status: external_exports.enum(["pending_review", "rejected", "promoted"]).optional(),
-  playbook_ref: external_exports.string().optional(),
   limit: external_exports.number().int().min(1).max(100).optional()
 });
 var reviewLessonParams = external_exports.object({

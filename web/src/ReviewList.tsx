@@ -126,10 +126,7 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
                 <CardContent className="review-card__content">
                   <div className="badge-row">
                     {!lesson.quote_verified && <Badge variant="warning"><ShieldAlert size={13} /> Verify quote</Badge>}
-                    {lesson.playbook_alignment === 'diverges' && <Badge variant="warning"><ShieldAlert size={13} /> Playbook differs</Badge>}
-                    {lesson.playbook_ref && <Badge variant="muted">{lesson.playbook_ref}</Badge>}
                   </div>
-                  {lesson.playbook_alignment === 'diverges' && lesson.playbook_note && <p className="playbook-note">{lesson.playbook_note}</p>}
 
                   {editing ? (
                     <div className="lesson-editor">

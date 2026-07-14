@@ -3,8 +3,6 @@ export interface Trace {
   submitted_by: string;
   before_text: string;
   after_text: string;
-  playbook_ref: string | null;
-  playbook_text: string | null;
   context_note: string | null;
   status: 'captured' | 'extracted' | 'skipped';
   skip_reason: string | null;
@@ -15,13 +13,10 @@ export interface Lesson {
   id: string;
   trace_id: string;
   submitted_by: string;
-  playbook_ref: string | null;
   quote: string;
   quote_verified: boolean;
   what_changed: string;
   why_it_matters: string;
-  playbook_alignment: 'aligned' | 'diverges' | 'not_applicable' | null;
-  playbook_note: string | null;
   status: 'pending_review' | 'rejected' | 'promoted';
   reviewer: string | null;
   reviewed_at: string | null;
@@ -30,7 +25,7 @@ export interface Lesson {
 }
 
 export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by'> &
-  Partial<Pick<Trace, 'playbook_ref' | 'playbook_text' | 'context_note'>>;
+  Partial<Pick<Trace, 'context_note'>>;
 
 export function captureTrace(input: NewTrace): Promise<Trace> {
   return post('/traces', input);

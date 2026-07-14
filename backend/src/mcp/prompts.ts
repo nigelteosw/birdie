@@ -75,10 +75,9 @@ ${profile.raw}
 Steps:
 1. Call get_trace with trace_id="${traceId}".
 2. Decide if the example is mentorship-worthy using the guidance above. If not, call skip_extraction with a short reason and stop.
-3. If it is worth capturing, prepare quote, what_changed, why_it_matters, and optional playbook_alignment/playbook_note.
+3. If it is worth capturing, prepare quote, what_changed, and why_it_matters.
 4. The quote must be copied verbatim from before_text. Birdie checks this in code.
-5. If the edit differs from the playbook, say that directly in playbook_note.
-6. Call save_extraction.`;
+5. Call save_extraction.`;
 }
 
 export function buildAskLessonPrompt(question: string, person?: string): string {

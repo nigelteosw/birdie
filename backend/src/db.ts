@@ -48,8 +48,6 @@ function migrate(db: SqliteDb): void {
       submitted_by TEXT NOT NULL,
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
-      playbook_ref TEXT,
-      playbook_text TEXT,
       context_note TEXT,
       source TEXT NOT NULL DEFAULT 'manual',
       status TEXT NOT NULL DEFAULT 'captured',
@@ -64,8 +62,6 @@ function migrate(db: SqliteDb): void {
       quote_verified INTEGER NOT NULL,
       what_changed TEXT NOT NULL,
       why_it_matters TEXT NOT NULL,
-      playbook_alignment TEXT,
-      playbook_note TEXT,
       status TEXT NOT NULL DEFAULT 'pending_review',
       reviewer TEXT,
       reviewed_at TEXT,
@@ -77,8 +73,8 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_trace_id ON lessons(trace_id);
   `);
-  dropColumnsIfPresent(db, 'traces', ['submitted_by_role', 'junior_name', 'senior_name']);
-  dropColumnsIfPresent(db, 'lessons', ['typology']);
+  dropColumnsIfPresent(db, 'traces', ['submitted_by_role', 'junior_name', 'senior_name', 'playbook_ref', 'playbook_text']);
+  dropColumnsIfPresent(db, 'lessons', ['typology', 'playbook_alignment', 'playbook_note']);
   setUpLessonsFts(db);
 }
 

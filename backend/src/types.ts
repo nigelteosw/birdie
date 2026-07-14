@@ -1,14 +1,11 @@
 export type TraceStatus = 'captured' | 'extracted' | 'skipped';
 export type LessonStatus = 'pending_review' | 'rejected' | 'promoted';
-export type PlaybookAlignment = 'aligned' | 'diverges' | 'not_applicable';
 
 export interface Trace {
   id: string;
   submitted_by: string;
   before_text: string;
   after_text: string;
-  playbook_ref: string | null;
-  playbook_text: string | null;
   context_note: string | null;
   source: string;
   status: TraceStatus;
@@ -20,8 +17,6 @@ export interface NewTrace {
   submitted_by: string;
   before_text: string;
   after_text: string;
-  playbook_ref?: string | null;
-  playbook_text?: string | null;
   context_note?: string | null;
   source?: string;
 }
@@ -33,8 +28,6 @@ export interface Lesson {
   quote_verified: boolean;
   what_changed: string;
   why_it_matters: string;
-  playbook_alignment: PlaybookAlignment | null;
-  playbook_note: string | null;
   status: LessonStatus;
   reviewer: string | null;
   reviewed_at: string | null;
@@ -44,7 +37,6 @@ export interface Lesson {
 
 export interface LessonWithTrace extends Lesson {
   submitted_by: string;
-  playbook_ref: string | null;
 }
 
 export interface NewExtraction {
@@ -52,8 +44,6 @@ export interface NewExtraction {
   quote: string;
   what_changed: string;
   why_it_matters: string;
-  playbook_alignment?: PlaybookAlignment | null;
-  playbook_note?: string | null;
 }
 
 export interface LessonEdit {
@@ -72,7 +62,6 @@ export interface PromotePayload {
 
 export interface LessonFilters {
   status?: LessonStatus;
-  playbook_ref?: string;
   submitted_by?: string;
   q?: string;
   limit?: number;
