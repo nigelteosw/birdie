@@ -77,6 +77,7 @@ Usage:
   birdie setup remote <url>          Use a shared Birdie server
   birdie config show                 Print config JSON
   birdie config path                 Print config/domain/db paths
+  birdie config set-name <name>      Update the remembered user_name
   birdie domain show                 Print the saved domain profile, or the default if unset
   birdie domain set <file>           Save a domain profile from a markdown file
 
@@ -98,8 +99,18 @@ async function runDoctor(): Promise<void> {
     ok: summary.configured,
     detail: summary.configured ? `${summary.mode} mode in ${summary.configPath}` : `not configured; run 'birdie setup local' or 'birdie setup remote <url>'`,
   });
+  checks.push({
+    name: 'user_name',
+    ok: Boolean(summary.user_name),
+    detail: summary.user_name
+      ? `Remembered as "${summary.user_name}".`
+      : `no user_name remembered; run 'birdie config set-name <name>'`,
+  });
 
   if (summary.mode === 'local') {
+    if (typeof Bun === 'undefined') {
+      checks.push(nodeVersionCheck());
+    }
     try {
       const db = openDb(summary.dbPath);
       db.close();
@@ -113,11 +124,14 @@ async function runDoctor(): Promise<void> {
     checks.push(await checkRemote(summary.server_url));
   }
 
+  const domainFile = readDomainProfileFile();
   const domain = loadDomainProfile(summary.domainPath);
   checks.push({
     name: 'domain',
     ok: domain.raw.length > 0,
-    detail: `Domain profile loaded from ${existsSync(summary.domainPath) ? summary.domainPath : 'default profile'}`,
+    detail: domainFile.customized
+      ? `Customized domain profile loaded from ${summary.domainPath}`
+      : 'Still using the generic built-in default — run \'birdie domain set <file>\' to customize it.',
   });
 
   for (const check of checks) {
@@ -165,7 +179,20 @@ function runConfig(args: string[]): void {
     );
     return;
   }
-  throw new Error("Usage: birdie config show | birdie config path");
+  if (action === 'set-name') {
+    const name = args[1];
+    if (!name) throw new Error('Usage: birdie config set-name <name>');
+    if (!state.config) {
+      throw new Error("Birdie is not set up yet. Run 'birdie setup local' or 'birdie setup remote <url>' first.");
+    }
+    const config: BirdieConfig =
+      state.config.mode === 'remote'
+        ? { mode: 'remote', server_url: state.config.server_url, user_name: name }
+        : { mode: 'local', user_name: name };
+    printWrittenConfig(writeConfig(config));
+    return;
+  }
+  throw new Error("Usage: birdie config show | birdie config path | birdie config set-name <name>");
 }
 
 function runDomain(args: string[]): void {
@@ -205,6 +232,19 @@ async function checkRemote(serverUrl: string): Promise<{ name: string; ok: boole
   } catch (err) {
     return { name: 'remote', ok: false, detail: errorMessage(err) };
   }
+}
+
+function nodeVersionCheck(): { name: string; ok: boolean; detail: string } {
+  const version = process.versions.node;
+  const [major, minor] = version.split('.').map(Number);
+  const ok = major > 22 || (major === 22 && minor >= 13);
+  return {
+    name: 'node_version',
+    ok,
+    detail: ok
+      ? `Node ${version} supports the built-in SQLite driver local mode needs.`
+      : `Node ${version} is too old — local mode needs Node 22.13+ for built-in SQLite support. Upgrade Node.`,
+  };
 }
 
 function normalizeUrl(value: string): string {

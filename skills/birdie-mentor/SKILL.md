@@ -20,7 +20,7 @@ Offer to customize the domain profile. If the user wants that, ask what field th
 Don't wait to be asked and don't wait for the user to say "capture this." The moment you notice one person's edit correcting or improving another person's code, draft, or document — in this conversation, in a diff you're shown, in a PR you're reviewing — call `capture_trace`:
 
 - `before_text` / `after_text`: the original and the corrected content, verbatim (not summarized or truncated).
-- `submitted_by`: the name of the person whose edit this is (e.g. "Nigel reviewing Lauren's draft" → `submitted_by: "Nigel"`). If it genuinely isn't clear from context, ask once, briefly — then remember the answer for the rest of the conversation instead of asking again.
+- `submitted_by`: the name of the person whose edit this is (e.g. "Nigel reviewing Lauren's draft" → `submitted_by: "Nigel"`). If it isn't clear from context, omit it — Birdie defaults to the remembered `user_name` automatically, so don't interrupt the user to ask.
 - `context_note`: one line on what prompted the edit, if it isn't obvious from the before/after text alone.
 
 Skip pure typo fixes, whitespace/formatting-only changes, and edits with no identifiable reasoning behind them — check the domain profile's "What counts as mentorship-worthy" section for the team's actual bar, since it varies by domain.

@@ -65158,7 +65158,7 @@ var init_index_DtiOmYCK = __esm({
 })();
 
 // backend/src/cli.ts
-import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+import { readFileSync as readFileSync3 } from "node:fs";
 
 // backend/src/db.ts
 import { createRequire } from "node:module";
@@ -77998,7 +77998,7 @@ var updateSettingsParams = external_exports.object({
 var captureTraceParams = external_exports.object({
   before_text: external_exports.string().min(1),
   after_text: external_exports.string().min(1),
-  submitted_by: external_exports.string().min(1),
+  submitted_by: external_exports.string().min(1).optional(),
   playbook_ref: external_exports.string().optional(),
   playbook_text: external_exports.string().optional(),
   context_note: external_exports.string().optional()
@@ -78082,9 +78082,9 @@ function registerTools(server, ctxFactory = buildMcpContext) {
   });
   mcp.addTool({
     name: "capture_trace",
-    description: "Capture a before/after edit as an example for later lesson extraction.",
+    description: "Capture a before/after edit as an example for later lesson extraction. Omit submitted_by to use the remembered user_name.",
     parameters: captureTraceParams,
-    execute: async (args) => json(await requireTraceService(ctxFactory()).capture(args))
+    execute: async (args) => json(await captureTraceHandler(ctxFactory(), args))
   });
   mcp.addTool({
     name: "get_trace",
@@ -78146,6 +78146,13 @@ function registerTools(server, ctxFactory = buildMcpContext) {
     )
   });
 }
+async function captureTraceHandler(ctx, args) {
+  const submitted_by = args.submitted_by ?? readSettingsSummary().user_name;
+  if (!submitted_by) {
+    throw new Error("submitted_by is required: no remembered user_name to fall back to. Pass submitted_by explicitly.");
+  }
+  return requireTraceService(ctx).capture({ ...args, submitted_by });
+}
 function completeSetupHandler(ctx, args) {
   const config2 = args.mode === "remote" ? { mode: "remote", server_url: args.server_url, user_name: args.user_name } : { mode: "local", user_name: args.user_name };
   return ctx.completeSetup(config2);
@@ -78181,9 +78188,17 @@ async function birdieDoctorHandler(ctx) {
       name: "config",
       ok: settings.configured,
       detail: settings.configured ? `Birdie is configured for ${settings.mode} mode.` : "Birdie is not configured. Run setup-birdie or update_birdie_settings."
+    },
+    {
+      name: "user_name",
+      ok: Boolean(settings.user_name),
+      detail: settings.user_name ? `Remembered as "${settings.user_name}".` : "No user_name remembered yet \u2014 capture_trace will need submitted_by passed explicitly until one is set."
     }
   ];
   if (settings.mode === "local") {
+    if (typeof Bun === "undefined") {
+      checks.push(nodeVersionCheck());
+    }
     try {
       const db = openDb(settings.dbPath);
       db.close();
@@ -78196,11 +78211,11 @@ async function birdieDoctorHandler(ctx) {
     checks.push(await checkRemoteServer(settings.server_url));
   }
   try {
-    const domain = await ctx.getDomainProfile();
+    const domainInfo = await getDomainProfileHandler(ctx);
     checks.push({
       name: "domain_profile",
-      ok: domain.raw.length > 0,
-      detail: "Domain profile loaded."
+      ok: domainInfo.content.length > 0,
+      detail: domainInfo.customized ? `Customized domain profile loaded from ${domainInfo.path}.` : "Still using the generic built-in default \u2014 ask Birdie to customize it for your team."
     });
   } catch (err) {
     checks.push({ name: "domain_profile", ok: false, detail: errorMessage(err) });
@@ -78233,6 +78248,16 @@ async function checkRemoteServer(serverUrl) {
   } catch (err) {
     return { name: "remote_server", ok: false, detail: errorMessage(err) };
   }
+}
+function nodeVersionCheck() {
+  const version2 = process.versions.node;
+  const [major, minor] = version2.split(".").map(Number);
+  const ok = major > 22 || major === 22 && minor >= 13;
+  return {
+    name: "node_version",
+    ok,
+    detail: ok ? `Node ${version2} supports the built-in SQLite driver local mode needs.` : `Node ${version2} is too old \u2014 local mode needs Node 22.13+ for built-in SQLite support. Upgrade Node.`
+  };
 }
 function errorMessage(err) {
   return err instanceof Error ? err.message : String(err);
@@ -78305,6 +78330,7 @@ Usage:
   birdie setup remote <url>          Use a shared Birdie server
   birdie config show                 Print config JSON
   birdie config path                 Print config/domain/db paths
+  birdie config set-name <name>      Update the remembered user_name
   birdie domain show                 Print the saved domain profile, or the default if unset
   birdie domain set <file>           Save a domain profile from a markdown file
 
@@ -78324,7 +78350,15 @@ async function runDoctor() {
     ok: summary.configured,
     detail: summary.configured ? `${summary.mode} mode in ${summary.configPath}` : `not configured; run 'birdie setup local' or 'birdie setup remote <url>'`
   });
+  checks.push({
+    name: "user_name",
+    ok: Boolean(summary.user_name),
+    detail: summary.user_name ? `Remembered as "${summary.user_name}".` : `no user_name remembered; run 'birdie config set-name <name>'`
+  });
   if (summary.mode === "local") {
+    if (typeof Bun === "undefined") {
+      checks.push(nodeVersionCheck2());
+    }
     try {
       const db = openDb(summary.dbPath);
       db.close();
@@ -78336,11 +78370,12 @@ async function runDoctor() {
   if (summary.mode === "remote" && summary.server_url) {
     checks.push(await checkRemote(summary.server_url));
   }
+  const domainFile = readDomainProfileFile();
   const domain = loadDomainProfile(summary.domainPath);
   checks.push({
     name: "domain",
     ok: domain.raw.length > 0,
-    detail: `Domain profile loaded from ${existsSync3(summary.domainPath) ? summary.domainPath : "default profile"}`
+    detail: domainFile.customized ? `Customized domain profile loaded from ${summary.domainPath}` : "Still using the generic built-in default \u2014 run 'birdie domain set <file>' to customize it."
   });
   for (const check2 of checks) {
     console.log(`${check2.ok ? "OK" : "FAIL"} ${check2.name}: ${check2.detail}`);
@@ -78385,7 +78420,17 @@ function runConfig(args) {
     );
     return;
   }
-  throw new Error("Usage: birdie config show | birdie config path");
+  if (action === "set-name") {
+    const name = args[1];
+    if (!name) throw new Error("Usage: birdie config set-name <name>");
+    if (!state.config) {
+      throw new Error("Birdie is not set up yet. Run 'birdie setup local' or 'birdie setup remote <url>' first.");
+    }
+    const config2 = state.config.mode === "remote" ? { mode: "remote", server_url: state.config.server_url, user_name: name } : { mode: "local", user_name: name };
+    printWrittenConfig(writeConfig(config2));
+    return;
+  }
+  throw new Error("Usage: birdie config show | birdie config path | birdie config set-name <name>");
 }
 function runDomain(args) {
   const action = args[0] ?? "show";
@@ -78420,6 +78465,16 @@ async function checkRemote(serverUrl) {
   } catch (err) {
     return { name: "remote", ok: false, detail: errorMessage2(err) };
   }
+}
+function nodeVersionCheck2() {
+  const version2 = process.versions.node;
+  const [major, minor] = version2.split(".").map(Number);
+  const ok = major > 22 || major === 22 && minor >= 13;
+  return {
+    name: "node_version",
+    ok,
+    detail: ok ? `Node ${version2} supports the built-in SQLite driver local mode needs.` : `Node ${version2} is too old \u2014 local mode needs Node 22.13+ for built-in SQLite support. Upgrade Node.`
+  };
 }
 function normalizeUrl(value) {
   return new URL(value).toString().replace(/\/+$/, "");

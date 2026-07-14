@@ -108,6 +108,7 @@ birdie setup local
 birdie setup remote http://127.0.0.1:6677
 birdie config show
 birdie config path
+birdie config set-name <name>
 birdie domain show
 birdie domain set ./my-domain-profile.md
 ```

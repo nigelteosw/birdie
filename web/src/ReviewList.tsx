@@ -1,14 +1,23 @@
+import { Check, ChevronRight, FileEdit, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
+import { Badge } from './components/ui/badge.js';
+import { Button } from './components/ui/button.js';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card.js';
+import { Input } from './components/ui/input.js';
+import { Textarea } from './components/ui/textarea.js';
 
 interface Props {
   refreshSignal: number;
+  onCapture: () => void;
 }
 
-export default function ReviewList({ refreshSignal }: Props) {
+export default function ReviewList({ refreshSignal, onCapture }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [reviewerById, setReviewerById] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [workingId, setWorkingId] = useState<string | null>(null);
 
   async function refresh() {
     const pending = await listLessons({ status: 'pending_review' });
@@ -16,41 +25,45 @@ export default function ReviewList({ refreshSignal }: Props) {
   }
 
   useEffect(() => {
-    refresh().catch((err) => setMessage((err as Error).message));
+    refresh().catch((err) => setMessage(`Could not load the queue: ${(err as Error).message}`));
   }, [refreshSignal]);
 
   async function handleSaveDraft(lesson: Lesson) {
-    await act(async () => {
+    await act(lesson.id, async () => {
       await reviewLesson(lesson.id, editableFields(lesson));
-      setMessage('Draft saved.');
+      setEditingId(null);
+      setMessage('Draft saved. It is still waiting for a final review.');
     });
   }
 
   async function handlePromote(lesson: Lesson) {
     const reviewer = reviewerById[lesson.id]?.trim();
     if (!reviewer) {
-      setMessage('Enter a reviewer name first.');
+      setMessage('Add the reviewer name before promoting this lesson.');
       return;
     }
-    await act(async () => {
+    await act(lesson.id, async () => {
       await promoteLesson(lesson.id, { reviewer, ...editableFields(lesson) });
-      setMessage('Added to the knowledge base.');
+      setMessage('Lesson added to the knowledge base.');
     });
   }
 
   async function handleReject(lesson: Lesson) {
-    await act(async () => {
+    await act(lesson.id, async () => {
       await reviewLesson(lesson.id, { reject: true });
-      setMessage('Rejected.');
+      setMessage('Lesson rejected and removed from the queue.');
     });
   }
 
-  async function act(fn: () => Promise<void>) {
+  async function act(id: string, fn: () => Promise<void>) {
+    setWorkingId(id);
     try {
       await fn();
       await refresh();
     } catch (err) {
-      setMessage(`Error: ${(err as Error).message}`);
+      setMessage(`Could not update the lesson: ${(err as Error).message}`);
+    } finally {
+      setWorkingId(null);
     }
   }
 
@@ -59,76 +72,116 @@ export default function ReviewList({ refreshSignal }: Props) {
   }
 
   return (
-    <section className="panel">
-      <div className="section-header">
-        <h2>Review queue</h2>
-        <button type="button" className="secondary" onClick={() => refresh()}>
-          Refresh
-        </button>
+    <section className="workspace-section" aria-labelledby="review-title">
+      <div className="section-intro">
+        <div>
+          <p className="eyebrow">Review workflow</p>
+          <h2 id="review-title">Keep only the guidance you trust.</h2>
+          <p>Check the proposed lesson, tune the wording, then promote it when it is ready to be shared.</p>
+        </div>
+        <div className="section-intro__actions">
+          <Button variant="outline" size="sm" onClick={() => refresh()}>
+            <RefreshCw size={15} />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={onCapture}>
+            Capture example <ChevronRight size={16} />
+          </Button>
+        </div>
       </div>
-      {message && <p className="status">{message}</p>}
-      {lessons.length === 0 && <p className="empty">Nothing waiting for review.</p>}
-      <div className="lesson-list">
-        {lessons.map((lesson) => (
-          <article key={lesson.id} className="lesson-card">
-            <div className="meta">
-              <span>Submitted by: {lesson.submitted_by}</span>
-              {lesson.playbook_ref && <span>Playbook: {lesson.playbook_ref}</span>}
+
+      {message && <div className="feedback-message" role="status"><Check size={16} />{message}</div>}
+
+      {lessons.length === 0 ? (
+        <Card className="empty-state">
+          <CardContent>
+            <div className="empty-state__mark"><Check size={22} /></div>
+            <div>
+              <CardTitle>All caught up</CardTitle>
+              <CardDescription>There are no lessons waiting for review. Capture a useful example when the next one comes along.</CardDescription>
             </div>
-            {!lesson.quote_verified && <p className="warning">We could not find this exact wording in the original. Please check it.</p>}
-            {lesson.playbook_alignment === 'diverges' && (
-              <p className="warning">This differs from your playbook. {lesson.playbook_note}</p>
-            )}
-            <label>
-              Quote
-              <textarea value={lesson.quote} rows={2} onChange={(event) => updateField(lesson.id, 'quote', event.target.value)} />
-            </label>
-            <label>
-              What changed
-              <textarea
-                value={lesson.what_changed}
-                rows={2}
-                onChange={(event) => updateField(lesson.id, 'what_changed', event.target.value)}
-              />
-            </label>
-            <label>
-              Why it matters
-              <textarea
-                value={lesson.why_it_matters}
-                rows={3}
-                onChange={(event) => updateField(lesson.id, 'why_it_matters', event.target.value)}
-              />
-            </label>
-            <label>
-              Reviewer
-              <input
-                value={reviewerById[lesson.id] ?? ''}
-                onChange={(event) => setReviewerById((prev) => ({ ...prev, [lesson.id]: event.target.value }))}
-              />
-            </label>
-            <p className="privacy">Remove client names, matter names, and other private details before adding this lesson.</p>
-            <div className="actions">
-              <button type="button" onClick={() => handlePromote(lesson)}>
-                Add to knowledge base
-              </button>
-              <button type="button" className="secondary" onClick={() => handleSaveDraft(lesson)}>
-                Save as Draft
-              </button>
-              <button type="button" className="danger" onClick={() => handleReject(lesson)}>
-                Reject
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+            <Button variant="outline" size="sm" onClick={onCapture}>Capture an example</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="review-list">
+          {lessons.map((lesson, index) => {
+            const editing = editingId === lesson.id;
+            const working = workingId === lesson.id;
+            return (
+              <Card key={lesson.id} className="review-card">
+                <CardHeader>
+                  <div className="review-card__heading">
+                    <span className="queue-number">{String(index + 1).padStart(2, '0')}</span>
+                    <div>
+                      <p className="overline">Submitted by {lesson.submitted_by}</p>
+                      <CardTitle>Proposed lesson</CardTitle>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(editing ? null : lesson.id)}>
+                    <FileEdit size={15} />
+                    {editing ? 'Done editing' : 'Edit'}
+                  </Button>
+                </CardHeader>
+                <CardContent className="review-card__content">
+                  <div className="badge-row">
+                    {!lesson.quote_verified && <Badge variant="warning"><ShieldAlert size={13} /> Verify quote</Badge>}
+                    {lesson.playbook_alignment === 'diverges' && <Badge variant="warning"><ShieldAlert size={13} /> Playbook differs</Badge>}
+                    {lesson.playbook_ref && <Badge variant="muted">{lesson.playbook_ref}</Badge>}
+                  </div>
+                  {lesson.playbook_alignment === 'diverges' && lesson.playbook_note && <p className="playbook-note">{lesson.playbook_note}</p>}
+
+                  {editing ? (
+                    <div className="lesson-editor">
+                      <EditableField label="Quote"><Textarea value={lesson.quote} rows={2} onChange={(event) => updateField(lesson.id, 'quote', event.target.value)} /></EditableField>
+                      <EditableField label="What changed"><Textarea value={lesson.what_changed} rows={2} onChange={(event) => updateField(lesson.id, 'what_changed', event.target.value)} /></EditableField>
+                      <EditableField label="Why it matters"><Textarea value={lesson.why_it_matters} rows={3} onChange={(event) => updateField(lesson.id, 'why_it_matters', event.target.value)} /></EditableField>
+                    </div>
+                  ) : (
+                    <LessonPreview lesson={lesson} />
+                  )}
+                </CardContent>
+                <CardFooter className="review-card__footer">
+                  <div className="reviewer-field">
+                    <label htmlFor={`reviewer-${lesson.id}`}>Reviewer</label>
+                    <Input id={`reviewer-${lesson.id}`} value={reviewerById[lesson.id] ?? ''} onChange={(event) => setReviewerById((prev) => ({ ...prev, [lesson.id]: event.target.value }))} placeholder="Your name" />
+                  </div>
+                  <p className="privacy-note">Remove client or matter details before sharing.</p>
+                  <div className="card-actions">
+                    {editing && <Button type="button" variant="outline" size="sm" disabled={working} onClick={() => handleSaveDraft(lesson)}>Save draft</Button>}
+                    <Button type="button" size="sm" disabled={working} onClick={() => handlePromote(lesson)}><Check size={16} /> Promote</Button>
+                    <Button type="button" variant="destructive" size="icon" disabled={working} onClick={() => handleReject(lesson)} aria-label="Reject lesson"><X size={16} /></Button>
+                  </div>
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
 
+function LessonPreview({ lesson }: { lesson: Lesson }) {
+  return (
+    <div className="lesson-preview">
+      <blockquote>{lesson.quote}</blockquote>
+      <div className="lesson-preview__detail">
+        <span>What changed</span>
+        <p>{lesson.what_changed}</p>
+      </div>
+      <div className="lesson-preview__detail">
+        <span>Why it matters</span>
+        <p>{lesson.why_it_matters}</p>
+      </div>
+    </div>
+  );
+}
+
+function EditableField({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="field"><span className="field__label">{label}</span>{children}</label>;
+}
+
 function editableFields(lesson: Lesson) {
-  return {
-    quote: lesson.quote,
-    what_changed: lesson.what_changed,
-    why_it_matters: lesson.why_it_matters,
-  };
+  return { quote: lesson.quote, what_changed: lesson.what_changed, why_it_matters: lesson.why_it_matters };
 }

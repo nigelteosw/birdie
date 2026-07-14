@@ -61,7 +61,7 @@ const updateSettingsParams = z
 const captureTraceParams = z.object({
   before_text: z.string().min(1),
   after_text: z.string().min(1),
-  submitted_by: z.string().min(1),
+  submitted_by: z.string().min(1).optional(),
   playbook_ref: z.string().optional(),
   playbook_text: z.string().optional(),
   context_note: z.string().optional(),
@@ -155,9 +155,10 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
   mcp.addTool({
     name: 'capture_trace',
-    description: 'Capture a before/after edit as an example for later lesson extraction.',
+    description:
+      "Capture a before/after edit as an example for later lesson extraction. Omit submitted_by to use the remembered user_name.",
     parameters: captureTraceParams,
-    execute: async (args: z.infer<typeof captureTraceParams>) => json(await requireTraceService(ctxFactory()).capture(args)),
+    execute: async (args: z.infer<typeof captureTraceParams>) => json(await captureTraceHandler(ctxFactory(), args)),
   });
   mcp.addTool({
     name: 'get_trace',
@@ -223,6 +224,14 @@ export function registerTools(server: FastMCP, ctxFactory: McpContextFactory = b
   });
 }
 
+export async function captureTraceHandler(ctx: McpContext, args: z.infer<typeof captureTraceParams>) {
+  const submitted_by = args.submitted_by ?? readSettingsSummary().user_name;
+  if (!submitted_by) {
+    throw new Error('submitted_by is required: no remembered user_name to fall back to. Pass submitted_by explicitly.');
+  }
+  return requireTraceService(ctx).capture({ ...args, submitted_by });
+}
+
 export function completeSetupHandler(ctx: McpContext, args: z.infer<typeof setupParams>): BirdieConfig {
   const config: BirdieConfig =
     args.mode === 'remote'
@@ -271,9 +280,19 @@ export async function birdieDoctorHandler(ctx: McpContext) {
         ? `Birdie is configured for ${settings.mode} mode.`
         : 'Birdie is not configured. Run setup-birdie or update_birdie_settings.',
     },
+    {
+      name: 'user_name',
+      ok: Boolean(settings.user_name),
+      detail: settings.user_name
+        ? `Remembered as "${settings.user_name}".`
+        : 'No user_name remembered yet — capture_trace will need submitted_by passed explicitly until one is set.',
+    },
   ];
 
   if (settings.mode === 'local') {
+    if (typeof Bun === 'undefined') {
+      checks.push(nodeVersionCheck());
+    }
     try {
       const db = openDb(settings.dbPath);
       db.close();
@@ -288,11 +307,13 @@ export async function birdieDoctorHandler(ctx: McpContext) {
   }
 
   try {
-    const domain = await ctx.getDomainProfile();
+    const domainInfo = await getDomainProfileHandler(ctx);
     checks.push({
       name: 'domain_profile',
-      ok: domain.raw.length > 0,
-      detail: 'Domain profile loaded.',
+      ok: domainInfo.content.length > 0,
+      detail: domainInfo.customized
+        ? `Customized domain profile loaded from ${domainInfo.path}.`
+        : 'Still using the generic built-in default — ask Birdie to customize it for your team.',
     });
   } catch (err) {
     checks.push({ name: 'domain_profile', ok: false, detail: errorMessage(err) });
@@ -334,6 +355,19 @@ async function checkRemoteServer(serverUrl: string): Promise<{ name: string; ok:
   } catch (err) {
     return { name: 'remote_server', ok: false, detail: errorMessage(err) };
   }
+}
+
+function nodeVersionCheck(): { name: string; ok: boolean; detail: string } {
+  const version = process.versions.node;
+  const [major, minor] = version.split('.').map(Number);
+  const ok = major > 22 || (major === 22 && minor >= 13);
+  return {
+    name: 'node_version',
+    ok,
+    detail: ok
+      ? `Node ${version} supports the built-in SQLite driver local mode needs.`
+      : `Node ${version} is too old — local mode needs Node 22.13+ for built-in SQLite support. Upgrade Node.`,
+  };
 }
 
 function errorMessage(err: unknown): string {

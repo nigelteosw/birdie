@@ -1,43 +1,93 @@
+import { BookOpen, ClipboardCheck, Feather, Plus, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import CaptureForm from './CaptureForm.js';
-import ReviewList from './ReviewList.js';
-import MyLessons from './MyLessons.js';
 import KnowledgeBase from './KnowledgeBase.js';
+import MyLessons from './MyLessons.js';
+import ReviewList from './ReviewList.js';
+import { Button } from './components/ui/button.js';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './components/ui/dialog.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs.js';
 
 type Tab = 'review' | 'mine' | 'knowledge';
+
+const tabs = [
+  { value: 'review', label: 'Review queue', icon: ClipboardCheck },
+  { value: 'mine', label: 'My lessons', icon: Feather },
+  { value: 'knowledge', label: 'Knowledge base', icon: BookOpen },
+] as const;
 
 export default function App() {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [tab, setTab] = useState<Tab>('review');
+  const [captureOpen, setCaptureOpen] = useState(false);
+
+  function handleCaptured() {
+    setRefreshSignal((value) => value + 1);
+    setCaptureOpen(false);
+    setTab('review');
+  }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <img src="/birdie-mascot.png" alt="Birdie" className="mascot" />
-        <div>
-          <h1>Birdie</h1>
-          <p>Capture examples. Review lessons. Add only confirmed guidance to the knowledge base.</p>
+    <main className="app-shell">
+      <header className="app-header">
+        <div className="brand-lockup">
+          <div className="brand-mark">
+            <img src="/birdie-mascot.png" alt="" />
+          </div>
+          <div>
+            <div className="eyebrow">Knowledge operations</div>
+            <h1>Birdie</h1>
+          </div>
+        </div>
+        <div className="header-actions">
+          <div className="header-note">
+            <Sparkles size={15} />
+            <span>Turn experience into trusted guidance</span>
+          </div>
+          <Button onClick={() => setCaptureOpen(true)}>
+            <Plus size={17} />
+            Capture example
+          </Button>
         </div>
       </header>
-      <nav className="tabs">
-        <button type="button" className={tab === 'review' ? 'tab tab--active' : 'tab'} onClick={() => setTab('review')}>
-          Review
-        </button>
-        <button type="button" className={tab === 'mine' ? 'tab tab--active' : 'tab'} onClick={() => setTab('mine')}>
-          My Lessons
-        </button>
-        <button type="button" className={tab === 'knowledge' ? 'tab tab--active' : 'tab'} onClick={() => setTab('knowledge')}>
-          Knowledge Base
-        </button>
-      </nav>
-      {tab === 'review' && (
-        <>
-          <CaptureForm onCaptured={() => setRefreshSignal((value) => value + 1)} />
-          <ReviewList refreshSignal={refreshSignal} />
-        </>
-      )}
-      {tab === 'mine' && <MyLessons />}
-      {tab === 'knowledge' && <KnowledgeBase />}
+
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="workspace-tabs">
+        <TabsList aria-label="Birdie workspace">
+          {tabs.map(({ value, label, icon: Icon }) => (
+            <TabsTrigger value={value} key={value}>
+              <Icon size={16} />
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="review">
+          <ReviewList refreshSignal={refreshSignal} onCapture={() => setCaptureOpen(true)} />
+        </TabsContent>
+        <TabsContent value="mine">
+          <MyLessons />
+        </TabsContent>
+        <TabsContent value="knowledge">
+          <KnowledgeBase />
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={captureOpen} onOpenChange={setCaptureOpen}>
+        <DialogContent className="capture-dialog">
+          <DialogHeader>
+            <DialogTitle>Capture an example</DialogTitle>
+            <DialogDescription>
+              Add the before-and-after context now. Birdie can turn it into a reviewable lesson in chat.
+            </DialogDescription>
+          </DialogHeader>
+          <CaptureForm onCaptured={handleCaptured} />
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
