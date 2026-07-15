@@ -236,6 +236,17 @@ export interface Vectorizer {
 
 The environment-selected adapter uses `HashedTrigramVectorizer`. A custom build may inject a model-backed vectorizer. A different dimension or vectorizer identifier requires a rebuilt compatible index; Birdie must fail clearly rather than query mismatched vectors.
 
+### Vectorizer evolution
+
+The supported progression is intentionally incremental:
+
+1. SQLite defaults to hybrid word/trigram FTS and does not create vectors.
+2. The environment-selected PostgreSQL adapter defaults to `HashedTrigramVectorizer`, which remains model-free.
+3. A future optional `LocalOnnxVectorizer` will be the recommended first-party semantic implementation. It will run a sentence-embedding model in-process from a bundled or locally cached ONNX model, without calling a hosted inference API.
+4. Custom builds may attach any `Vectorizer` implementation, including other local runtimes or hosted providers.
+
+The ONNX implementation is not part of this implementation pass. Adding it must not change `SearchAdapter` or the pgvector query flow. It will declare its own stable identifier and dimensions, and activating it will require `birdie rebuild-search` so vectors from different spaces are never mixed.
+
 ## Application Data Flow
 
 ### Listing without search
