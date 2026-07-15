@@ -1,6 +1,7 @@
 import { FastMCP } from 'fastmcp';
 import type { BirdieAuthRuntime } from '../auth.js';
 import type { AppContext } from '../context.js';
+import { mcpResourceScopes } from '../mcpScopes.js';
 import type { HostedConfig } from '../runtimeConfig.js';
 import { createMcpAuthenticator, type McpSession } from './principal.js';
 import { registerPrompts } from './prompts.js';
@@ -21,7 +22,7 @@ export function createRemoteMcpServer(
       protectedResource: {
         resource: `${config.baseUrl}/mcp`,
         authorizationServers: [`${config.baseUrl}/api/auth`],
-        scopesSupported: ['birdie:read', 'birdie:write'],
+        scopesSupported: [...mcpResourceScopes],
         bearerMethodsSupported: ['header'],
       },
     },

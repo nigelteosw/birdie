@@ -11,6 +11,7 @@ import {
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import type { BirdieAuth, BirdieAuthRuntime } from './auth.js';
+import { mcpResourceScopes } from './mcpScopes.js';
 import {
   createSessionPrincipalResolver,
   requirePrincipal,
@@ -128,7 +129,7 @@ function mountOAuthMetadata(app: Express, auth: BirdieAuth, baseUrl?: string): v
         const metadata = await oauthProviderResourceClient(auth).getActions().getProtectedResourceMetadata({
           resource: `${baseUrl}/mcp`,
           authorization_servers: [`${baseUrl}/api/auth`],
-          scopes_supported: ['birdie:read', 'birdie:write'],
+          scopes_supported: [...mcpResourceScopes],
         });
         res.json(metadata);
       } catch (error) {
