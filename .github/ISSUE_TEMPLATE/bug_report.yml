@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a reproducible problem in Birdie.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a problem.
+  - type: checkboxes
+    id: existing-issues
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched the existing issues and did not find this problem.
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong, and what impact did it have?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that reproduces the problem.
+      placeholder: |
+        1. Start Birdie with ...
+        2. Sign in as ...
+        3. Open ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Birdie commit or version
+      placeholder: main at abc1234
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      placeholder: Ubuntu 24.04, macOS 15, Windows 11
+    validations:
+      required: true
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      placeholder: 1.3.11
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment-type
+    attributes:
+      label: Deployment type
+      options:
+        - Docker or OCI container
+        - Bare local development
+        - Other self-hosted deployment
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove secrets, access tokens, email addresses, and private content before posting.
+      render: shell
