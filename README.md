@@ -2,67 +2,111 @@
 
 # Birdie
 
-Birdie turns real before/after edits into reviewed team lessons. It exposes one hosted web UI, authenticated REST API, and OAuth 2.1 remote MCP endpoint. The connected MCP host does the reasoning; Birdie stores, validates, reviews, and retrieves the shared data.
+Birdie turns real before/after edits into reviewed team lessons. It provides one hosted web UI, authenticated REST API, and OAuth 2.1 remote MCP endpoint. The connected MCP host does the reasoning; Birdie stores, validates, reviews, and retrieves the shared data.
 
-## Run locally
+The same account works in the browser and through MCP. On first start, Birdie creates the configured admin user. That admin can create other users, issue temporary passwords, revoke sessions, and disable accounts from the web UI.
 
-Birdie requires Bun and a persistent SQLite path.
+## Architecture
 
-```bash
-bun install
-BETTER_AUTH_SECRET=replace-with-at-least-32-characters \
-BIRDIE_BASE_URL=http://localhost:6677 \
-BIRDIE_ADMIN_EMAIL=admin@example.com \
-BIRDIE_ADMIN_PASSWORD=replace-with-12-plus-characters \
-DB_PATH=./data/birdie.db \
-DOMAIN_PROFILE_PATH=./data/domain.md \
-bun run dev:backend
-```
+- Express exposes the web UI, REST API, Better Auth routes, OAuth metadata, and `/mcp` through one public port.
+- Better Auth provides email/password sessions for the web UI and OAuth 2.1 authorization for MCP clients.
+- FastMCP listens on a loopback-only internal port and is proxied by Express.
+- SQLite stores users, sessions, captures, and reviewed lessons in one persistent data directory.
+- The React/Vite application is compiled into the production image and served by Express.
 
-Open `http://localhost:6677` and sign in with the bootstrap admin credentials. On first start Birdie creates that admin; later starts never overwrite an existing account's password. The admin can create users, set temporary passwords, revoke sessions, and disable accounts in the Users tab.
+Birdie does not run a local memory database or stdio bridge. Local MCP use is a personal connection to the same hosted endpoint; repository files such as `MEMORY.md` remain a separate concern.
 
-## Connect an MCP client
+## Quick start with Docker
 
-Add this remote MCP URL to Claude Code, Codex, ChatGPT, or any client supporting Streamable HTTP and OAuth:
-
-```text
-https://birdie.example.com/mcp
-```
-
-The client discovers Birdie's OAuth metadata, opens the web sign-in and consent flow, and returns with a resource-bound token. Captures and promotions are attributed to that account. There is no local Birdie database or stdio bridge.
-
-The Claude plugin in this repository is skill-only: it adds proactive capture and retrieval behavior. Configure the hosted `/mcp` connection separately using your MCP client's normal remote-server setup.
-
-## Configuration
-
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `BETTER_AUTH_SECRET` | yes | — | At least 32 characters; signs auth state and tokens. |
-| `BIRDIE_BASE_URL` | yes | — | Public origin, HTTPS except on loopback. |
-| `BIRDIE_ADMIN_EMAIL` | yes | — | Bootstrap admin email. |
-| `BIRDIE_ADMIN_PASSWORD` | yes | — | Bootstrap password, at least 12 characters. |
-| `BIRDIE_ADMIN_NAME` | no | email prefix | Admin display name. |
-| `PORT` | no | `6677` | Public web, REST, OAuth, and `/mcp` listener. |
-| `MCP_INTERNAL_PORT` | no | `6678` | Loopback-only FastMCP listener. |
-| `DB_PATH` | no | `/data/birdie.db` | Shared SQLite database. |
-| `DOMAIN_PROFILE_PATH` | no | `/data/domain.md` | Shared domain guidance. |
-
-## Docker
+Install Docker with Compose support, then:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Mount `/data` on persistent storage. Only the public `PORT` should be exposed; FastMCP stays on loopback and Express proxies streaming requests to it. Use a container host with a persistent disk (Railway, Fly.io, Render, or a VPS), not an ephemeral serverless filesystem.
+Replace the example secret, email, and password in `.env` before starting. Open [http://localhost:6677](http://localhost:6677) and sign in with the bootstrap admin credentials. Restarts never overwrite an existing account's password.
 
-## Development
+## Connect an MCP client
 
-```bash
-bun run build
-bun test
+Add Birdie's Streamable HTTP endpoint using your MCP client's normal remote-server setup:
+
+```text
+http://localhost:6677/mcp
 ```
 
-The authenticated application routes are `/traces`, `/lessons`, `/domain`, and `/api/admin/*`. Better Auth owns `/api/auth/*`; OAuth discovery is published under `/.well-known/*`; remote MCP is `/mcp`; `GET /__birdie` is the public health check.
+For a deployed instance, use its public HTTPS origin, for example `https://birdie.example.com/mcp`. The client discovers Birdie's OAuth metadata, opens the same web sign-in and consent flow, and returns with a resource-bound token. Captures and promotions are attributed to that signed-in account.
 
-The `docs/` directory is a static GitHub Pages site and needs no build step.
+The Claude plugin in this repository is skill-only: it adds proactive capture and retrieval behavior. Configure the `/mcp` connection separately in your client.
+
+## Local development
+
+Birdie uses [Bun](https://bun.sh/) 1.3.11 workspaces.
+
+```bash
+bun install --frozen-lockfile
+cp .env.example .env
+```
+
+Start the backend on the port expected by Vite's development proxy:
+
+```bash
+PORT=4000 \
+BIRDIE_BASE_URL=http://localhost:4000 \
+DB_PATH=./data/birdie.db \
+DOMAIN_PROFILE_PATH=./data/domain.md \
+bun run dev:backend
+```
+
+In a second terminal, run `bun run dev:web`, then open [http://localhost:5173](http://localhost:5173). The credentials still come from `.env`.
+
+The main project checks are:
+
+```bash
+bun test
+bun run build
+```
+
+## Configuration
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `BETTER_AUTH_SECRET` | yes | — | At least 32 characters; signs auth state and tokens. |
+| `BIRDIE_BASE_URL` | yes | — | Public origin, using HTTPS except on loopback. |
+| `BIRDIE_ADMIN_EMAIL` | yes | — | Email for the bootstrapped admin user. |
+| `BIRDIE_ADMIN_PASSWORD` | yes | — | Initial admin password, at least 12 characters. |
+| `BIRDIE_ADMIN_NAME` | no | email prefix | Admin display name. |
+| `PORT` | no | `6677` | Public web, REST, OAuth, and MCP listener. |
+| `MCP_INTERNAL_PORT` | no | `6678` | Loopback-only FastMCP listener; do not publish it. |
+| `DB_PATH` | no | `/data/birdie.db` | Shared SQLite database. |
+| `DOMAIN_PROFILE_PATH` | no | `/data/domain.md` | Shared domain guidance. |
+
+See [.env.example](.env.example) for a copy-ready container configuration.
+
+## Deploying Birdie
+
+The included Dockerfile builds a standard OCI image and does not depend on a specific hosting platform. For production:
+
+1. Terminate TLS in front of Birdie and set `BIRDIE_BASE_URL` to the exact public HTTPS origin.
+2. Mount persistent storage at `/data` and run one writable application replica for the SQLite database.
+3. Publish only `PORT`; keep `MCP_INTERNAL_PORT` private inside the container.
+4. Configure the platform's HTTP health check to request `GET /__birdie`.
+5. Store `BETTER_AUTH_SECRET` and the bootstrap credentials in the platform's secret manager.
+
+The authenticated application routes are `/traces`, `/lessons`, `/domain`, and `/api/admin/*`. Better Auth owns `/api/auth/*`; OAuth discovery is under `/.well-known/*`; remote MCP is `/mcp`.
+
+## Documentation
+
+The [`docs/`](docs/) directory is a static GitHub Pages site and needs no build step. MCP behavior for supported coding agents lives in [`skills/birdie-mentor/`](skills/birdie-mentor/).
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Community participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Birdie is available under the [MIT License](LICENSE).

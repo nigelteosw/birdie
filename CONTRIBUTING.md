@@ -9,11 +9,19 @@ Birdie uses Bun 1.3.11 workspaces.
 ```bash
 bun install --frozen-lockfile
 cp .env.example .env
-bun run dev:backend
-bun run dev:web
 ```
 
-The example environment uses container paths. For bare local development, set `DB_PATH=./data/birdie.db` and `DOMAIN_PROFILE_PATH=./data/domain.md`. Deployed containers should persist `/data`.
+The example environment uses the container's public port and storage paths. Start the backend for bare local development with overrides that match Vite's development proxy:
+
+```bash
+PORT=4000 \
+BIRDIE_BASE_URL=http://localhost:4000 \
+DB_PATH=./data/birdie.db \
+DOMAIN_PROFILE_PATH=./data/domain.md \
+bun run dev:backend
+```
+
+Then run `bun run dev:web` in a second terminal. Deployed containers should persist `/data`.
 
 Run the existing checks before submitting a pull request:
 
