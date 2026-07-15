@@ -5,10 +5,11 @@ services:
       - "6677:6677"
     environment:
       PORT: "6677"
+      MCP_INTERNAL_PORT: "6678"
       BIRDIE_BASE_URL: http://localhost:6677
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BIRDIE_ADMIN_EMAIL: ${BIRDIE_ADMIN_EMAIL}
-      BIRDIE_ADMIN_PASSWORD: ${BIRDIE_ADMIN_PASSWORD}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      BIRDIE_ADMIN_EMAIL: ${BIRDIE_ADMIN_EMAIL:?Set BIRDIE_ADMIN_EMAIL in .env}
+      BIRDIE_ADMIN_PASSWORD: ${BIRDIE_ADMIN_PASSWORD:?Set BIRDIE_ADMIN_PASSWORD in .env}
       BIRDIE_ADMIN_NAME: ${BIRDIE_ADMIN_NAME:-Birdie Admin}
       DB_PATH: /data/birdie.db
       DOMAIN_PROFILE_PATH: /data/domain.md
@@ -18,6 +19,7 @@ services:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:6677/__birdie').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 3s
+      start_period: 5s
       retries: 3
 
 volumes:
