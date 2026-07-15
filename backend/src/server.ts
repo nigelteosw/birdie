@@ -66,8 +66,8 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
   }
   if (options.auth) {
     const authHandler = toNodeHandler(options.auth);
-    app.all('/api/auth/*', authHandler);
     mountOAuthMetadata(app, options.auth, options.baseUrl);
+    app.all('/api/auth/*', authHandler);
   }
 
   // Public liveness marker and static auth pages must remain reachable before
@@ -107,10 +107,18 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
 function mountOAuthMetadata(app: Express, auth: BirdieAuth, baseUrl?: string): void {
   const authorizationMetadata = oauthProviderAuthServerMetadata(auth);
   const openIdMetadata = oauthProviderOpenIdConfigMetadata(auth);
-  app.get('/.well-known/oauth-authorization-server', (req, res, next) => {
+  app.get([
+    '/.well-known/oauth-authorization-server',
+    '/.well-known/oauth-authorization-server/api/auth',
+    '/api/auth/.well-known/oauth-authorization-server',
+  ], (req, res, next) => {
     forwardMetadata(authorizationMetadata, req, res).catch(next);
   });
-  app.get('/.well-known/openid-configuration', (req, res, next) => {
+  app.get([
+    '/.well-known/openid-configuration',
+    '/.well-known/openid-configuration/api/auth',
+    '/api/auth/.well-known/openid-configuration',
+  ], (req, res, next) => {
     forwardMetadata(openIdMetadata, req, res).catch(next);
   });
 
@@ -141,7 +149,13 @@ async function forwardMetadata(
     })
   );
   response.headers.forEach((value, key) => res.setHeader(key, value));
-  res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
+  const metadata = await response.json() as Record<string, unknown>;
+  res.status(response.status).json(prepareAuthorizationMetadata(metadata));
+}
+
+export function prepareAuthorizationMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const { authorization_response_iss_parameter_supported: _codexIncompatible, ...compatible } = metadata;
+  return compatible;
 }
 
 function findWebDist(): string | undefined {
