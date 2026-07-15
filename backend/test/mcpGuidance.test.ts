@@ -31,6 +31,16 @@ describe('MCP lesson guidance', () => {
     expect(prompt).toContain('Never call promote_lesson without explicit user approval');
   });
 
+  it('excludes edits that should not become lessons', () => {
+    const prompt = buildExtractLessonPrompt({ raw: '# Domain\nEngineering' }, 'trace-123');
+
+    expect(prompt).toContain('typo-only');
+    expect(prompt).toContain('formatting-only');
+    expect(prompt).toContain('subjective');
+    expect(prompt).toContain('one-off');
+    expect(prompt).toContain('unsafe-to-store');
+  });
+
   it('describes the same lifecycle on raw MCP tools', () => {
     const descriptions = toolDescriptions();
 
@@ -43,5 +53,17 @@ describe('MCP lesson guidance', () => {
     expect(descriptions.get('review_lesson')).toContain('correct an unverified quote');
     expect(descriptions.get('open_review_queue')).toContain('when the user asks');
     expect(descriptions.get('promote_lesson')).toContain('explicit human approval');
+  });
+
+  it('requires grounded source text and capture boundaries on raw MCP tools', () => {
+    const captureTrace = toolDescriptions().get('capture_trace');
+
+    expect(captureTrace).toContain('both original and corrected content are visible');
+    expect(captureTrace).toContain('Never invent either side');
+    expect(captureTrace).toContain('typo-only');
+    expect(captureTrace).toContain('formatting-only');
+    expect(captureTrace).toContain('subjective');
+    expect(captureTrace).toContain('one-off');
+    expect(captureTrace).toContain('unsafe-to-store');
   });
 });

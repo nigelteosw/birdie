@@ -28,7 +28,7 @@ ${profile.raw}
 
 Steps:
 1. Call get_trace with trace_id="${traceId}".
-2. Decide if the example is mentorship-worthy using the guidance above. If not, call skip_extraction with a short reason and stop.
+2. Decide if the example is mentorship-worthy using the guidance above. Do not capture typo-only, formatting-only, subjective, one-off, or unsafe-to-store edits. If it is not mentorship-worthy, call skip_extraction with a short reason and stop.
 3. If it is worth capturing, prepare quote, what_changed, and why_it_matters. Use what_changed for the correction and why_it_matters for the transferable principle.
 4. Copy quote verbatim as the smallest contiguous excerpt from before_text that preserves the point. Never quote after_text or paraphrase the original.
 5. Call save_extraction and inspect the returned lesson. Confirm its status is pending_review and quote_verified is true.

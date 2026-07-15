@@ -71,7 +71,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'capture_trace',
-    description: 'Capture a clearly reusable before/after correction using verbatim original and corrected text, then extract a pending lesson in the same turn.',
+    description: 'Capture a clearly reusable before/after correction only when both original and corrected content are visible in the conversation. Never invent either side. Do not capture typo-only, formatting-only, subjective, one-off, or unsafe-to-store edits. Use verbatim original and corrected text, then extract a pending lesson in the same turn.',
     parameters: captureTraceParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {
