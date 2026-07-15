@@ -1,6 +1,7 @@
 export interface Trace {
   id: string;
   submitted_by: string;
+  submitted_by_user_id: string | null;
   before_text: string;
   after_text: string;
   context_note: string | null;
@@ -13,18 +14,20 @@ export interface Lesson {
   id: string;
   trace_id: string;
   submitted_by: string;
+  submitted_by_user_id: string | null;
   quote: string;
   quote_verified: boolean;
   what_changed: string;
   why_it_matters: string;
   status: 'pending_review' | 'rejected' | 'promoted';
   reviewer: string | null;
+  reviewer_user_id: string | null;
   reviewed_at: string | null;
   promoted_at: string | null;
   created_at: string;
 }
 
-export type NewTrace = Pick<Trace, 'before_text' | 'after_text' | 'submitted_by'> &
+export type NewTrace = Pick<Trace, 'before_text' | 'after_text'> &
   Partial<Pick<Trace, 'context_note'>>;
 
 export function captureTrace(input: NewTrace): Promise<Trace> {
@@ -33,7 +36,7 @@ export function captureTrace(input: NewTrace): Promise<Trace> {
 
 export interface LessonFilters {
   status?: Lesson['status'];
-  submitted_by?: string;
+  mine?: boolean;
   q?: string;
   limit?: number;
 }
@@ -56,7 +59,7 @@ export function reviewLesson(
 
 export function promoteLesson(
   id: string,
-  payload: { reviewer: string } & Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters'>>
+  payload: Partial<Pick<Lesson, 'quote' | 'what_changed' | 'why_it_matters'>>
 ): Promise<Lesson> {
   return post(`/lessons/${id}/promote`, payload);
 }
@@ -66,7 +69,7 @@ export function deleteLesson(id: string): Promise<void> {
 }
 
 async function get<T>(url: string): Promise<T> {
-  return json(await fetch(url));
+  return json(await fetch(url, { credentials: 'same-origin' }));
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -78,12 +81,13 @@ async function patch<T>(url: string, body: unknown): Promise<T> {
 }
 
 async function del(url: string): Promise<void> {
-  await throwIfError(await fetch(url, { method: 'DELETE' }));
+  await throwIfError(await fetch(url, { method: 'DELETE', credentials: 'same-origin' }));
 }
 
 function request(method: string, body: unknown): RequestInit {
   return {
     method,
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   };
@@ -96,7 +100,10 @@ async function json<T>(res: Response): Promise<T> {
 
 async function throwIfError(res: Response): Promise<void> {
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
 }
+
+export const AUTH_EXPIRED_EVENT = 'birdie:auth-expired';

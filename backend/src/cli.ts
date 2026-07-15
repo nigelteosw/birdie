@@ -24,6 +24,7 @@ export async function serveBirdie(config = readHostedConfig()): Promise<BirdieSe
 
   const app = createServer(ctx, {
     auth: authRuntime.auth,
+    authRuntime,
     baseUrl: config.baseUrl,
     mcpTarget: `http://127.0.0.1:${config.mcpInternalPort}`,
   });

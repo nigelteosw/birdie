@@ -2,7 +2,6 @@ import { CheckCircle2, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { captureTrace } from './api.js';
 import { Button } from './components/ui/button.js';
-import { Input } from './components/ui/input.js';
 import { Textarea } from './components/ui/textarea.js';
 
 interface Props {
@@ -12,7 +11,6 @@ interface Props {
 export default function CaptureForm({ onCaptured }: Props) {
   const [beforeText, setBeforeText] = useState('');
   const [afterText, setAfterText] = useState('');
-  const [submittedBy, setSubmittedBy] = useState('');
   const [contextNote, setContextNote] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -25,7 +23,6 @@ export default function CaptureForm({ onCaptured }: Props) {
       await captureTrace({
         before_text: beforeText,
         after_text: afterText,
-        submitted_by: submittedBy,
         context_note: contextNote || undefined,
       });
       setBeforeText('');
@@ -47,9 +44,6 @@ export default function CaptureForm({ onCaptured }: Props) {
         </Field>
         <Field label="After" hint="What changed or worked better?" className="span-full">
           <Textarea value={afterText} onChange={(event) => setAfterText(event.target.value)} required rows={5} />
-        </Field>
-        <Field label="Submitted by">
-          <Input value={submittedBy} onChange={(event) => setSubmittedBy(event.target.value)} placeholder="e.g. Jane" required />
         </Field>
         <Field label="Helpful context" optional className="span-full">
           <Textarea value={contextNote} onChange={(event) => setContextNote(event.target.value)} rows={2} />

@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardCheck, Feather, Plus, Sparkles } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Feather, Plus, Sparkles, Users } from 'lucide-react';
 import { useState } from 'react';
 import CaptureForm from './CaptureForm.js';
 import KnowledgeBase from './KnowledgeBase.js';
@@ -13,8 +13,11 @@ import {
   DialogTitle,
 } from './components/ui/dialog.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs.js';
+import AccountMenu from './AccountMenu.js';
+import UserManagement from './UserManagement.js';
+import type { SessionUser } from './auth-client.js';
 
-type Tab = 'review' | 'mine' | 'knowledge';
+type Tab = 'review' | 'mine' | 'knowledge' | 'users';
 
 const tabs = [
   { value: 'review', label: 'Review queue', icon: ClipboardCheck },
@@ -22,7 +25,7 @@ const tabs = [
   { value: 'knowledge', label: 'Knowledge base', icon: BookOpen },
 ] as const;
 
-export default function App() {
+export default function App({ user }: { user: SessionUser }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [tab, setTab] = useState<Tab>('review');
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -54,6 +57,7 @@ export default function App() {
             <Plus size={17} />
             Capture example
           </Button>
+          <AccountMenu user={user} />
         </div>
       </header>
 
@@ -65,6 +69,7 @@ export default function App() {
               {label}
             </TabsTrigger>
           ))}
+          {String(user.role ?? '').split(',').includes('admin') && <TabsTrigger value="users"><Users size={16} />Users</TabsTrigger>}
         </TabsList>
         <TabsContent value="review">
           <ReviewList refreshSignal={refreshSignal} onCapture={() => setCaptureOpen(true)} />
@@ -74,6 +79,9 @@ export default function App() {
         </TabsContent>
         <TabsContent value="knowledge">
           <KnowledgeBase />
+        </TabsContent>
+        <TabsContent value="users">
+          <UserManagement />
         </TabsContent>
       </Tabs>
 

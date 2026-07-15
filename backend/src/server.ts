@@ -10,7 +10,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import type { BirdieAuth } from './auth.js';
+import type { BirdieAuth, BirdieAuthRuntime } from './auth.js';
 import {
   createSessionPrincipalResolver,
   requirePrincipal,
@@ -20,9 +20,11 @@ import {
 import type { AppContext } from './context.js';
 import { lessonsRouter } from './routes/lessons.js';
 import { tracesRouter } from './routes/traces.js';
+import { adminRouter } from './routes/admin.js';
 
 export interface ServerAuthOptions {
   auth?: BirdieAuth;
+  authRuntime?: BirdieAuthRuntime;
   principalResolver?: PrincipalResolver;
   baseUrl?: string;
   mcpTarget?: string;
@@ -72,6 +74,7 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
   const principalResolver = options.principalResolver ??
     (options.auth ? createSessionPrincipalResolver(options.auth) : rejectAnonymous);
   const authenticate = requirePrincipal(principalResolver);
+  if (options.authRuntime) app.use('/api/admin', authenticate, adminRouter(options.authRuntime));
   app.use('/traces', authenticate, tracesRouter(ctx));
   app.use('/lessons', authenticate, lessonsRouter(ctx));
   app.get('/domain', authenticate, requireScope('birdie:read'), (_req, res) => {

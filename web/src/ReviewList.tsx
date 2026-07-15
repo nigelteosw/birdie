@@ -4,7 +4,6 @@ import { listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js'
 import { Badge } from './components/ui/badge.js';
 import { Button } from './components/ui/button.js';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card.js';
-import { Input } from './components/ui/input.js';
 import { Textarea } from './components/ui/textarea.js';
 
 interface Props {
@@ -14,7 +13,6 @@ interface Props {
 
 export default function ReviewList({ refreshSignal, onCapture }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [reviewerById, setReviewerById] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -37,13 +35,8 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
   }
 
   async function handlePromote(lesson: Lesson) {
-    const reviewer = reviewerById[lesson.id]?.trim();
-    if (!reviewer) {
-      setMessage('Add the reviewer name before promoting this lesson.');
-      return;
-    }
     await act(lesson.id, async () => {
-      await promoteLesson(lesson.id, { reviewer, ...editableFields(lesson) });
+      await promoteLesson(lesson.id, editableFields(lesson));
       setMessage('Lesson added to the knowledge base.');
     });
   }
@@ -139,10 +132,6 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
                   )}
                 </CardContent>
                 <CardFooter className="review-card__footer">
-                  <div className="reviewer-field">
-                    <label htmlFor={`reviewer-${lesson.id}`}>Reviewer</label>
-                    <Input id={`reviewer-${lesson.id}`} value={reviewerById[lesson.id] ?? ''} onChange={(event) => setReviewerById((prev) => ({ ...prev, [lesson.id]: event.target.value }))} placeholder="Your name" />
-                  </div>
                   <p className="privacy-note">Remove client or matter details before sharing.</p>
                   <div className="card-actions">
                     {editing && <Button type="button" variant="outline" size="sm" disabled={working} onClick={() => handleSaveDraft(lesson)}>Save draft</Button>}

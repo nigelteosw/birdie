@@ -8,6 +8,8 @@ export default defineConfig({
       '/traces': 'http://localhost:4000',
       '/lessons': 'http://localhost:4000',
       '/domain': 'http://localhost:4000',
+      '/api': 'http://localhost:4000',
+      '/mcp': 'http://localhost:4000',
     },
   },
 });
