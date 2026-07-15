@@ -3,237 +3,76 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="Birdie is a local-first mentorship capture plugin for turning reviewed before/after edits into searchable lessons."
-    />
+    <meta name="description" content="Birdie turns reviewed before/after edits into authenticated, shared team guidance." />
     <title>Birdie Docs</title>
     <link rel="icon" href="assets/birdie-mascot.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="Birdie home">
-        <img src="assets/birdie-mascot.png" alt="" />
-        <span>Birdie</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#install">Install</a>
-        <a href="#workflow">Workflow</a>
-        <a href="#reference">Reference</a>
-        <a href="#pages">Publish</a>
-      </nav>
+      <a class="brand" href="#top" aria-label="Birdie home"><img src="assets/birdie-mascot.png" alt="" /><span>Birdie</span></a>
+      <nav aria-label="Primary navigation"><a href="#deploy">Deploy</a><a href="#connect">Connect</a><a href="#workflow">Workflow</a><a href="#reference">Reference</a></nav>
     </header>
-
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Local-first mentorship capture</p>
-          <h1>Turn before/after edits into reviewed team lessons.</h1>
-          <p class="lede">
-            Birdie is a Claude Code plugin and standard MCP server that captures real edits, lets the assistant extract
-            candidate lessons, keeps humans in the review loop, and answers questions from approved examples.
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="#install">Install Birdie</a>
-            <a class="button secondary" href="#workflow">See the workflow</a>
-          </div>
+          <p class="eyebrow">Shared mentorship knowledge</p>
+          <h1>Turn real edits into trusted team guidance.</h1>
+          <p class="lede">Birdie combines a signed-in review workspace with an OAuth-authenticated remote MCP server. Every capture and promotion is tied to the same user account.</p>
+          <div class="hero-actions"><a class="button primary" href="#deploy">Deploy Birdie</a><a class="button secondary" href="#connect">Connect MCP</a></div>
         </div>
-        <div class="hero-visual" aria-hidden="true">
-          <img src="assets/birdie-mascot.png" alt="" />
-        </div>
+        <div class="hero-visual" aria-hidden="true"><img src="assets/birdie-mascot.png" alt="" /></div>
       </section>
 
       <section class="band summary-band" aria-labelledby="what-birdie-does">
-        <div class="section-heading">
-          <p class="eyebrow">What it does</p>
-          <h2 id="what-birdie-does">A compact review loop for mentorship knowledge.</h2>
-        </div>
+        <div class="section-heading"><p class="eyebrow">One hosted loop</p><h2 id="what-birdie-does">Capture, review, and retrieve from one shared service.</h2></div>
         <div class="summary-grid">
-          <article>
-            <span class="number">01</span>
-            <h3>Capture the edit</h3>
-            <p>Store the before text, after text, contributor name, and optional playbook guidance.</p>
-          </article>
-          <article>
-            <span class="number">02</span>
-            <h3>Extract the lesson</h3>
-            <p>The MCP host does the reasoning. Birdie validates the quote and saves the result for review.</p>
-          </article>
-          <article>
-            <span class="number">03</span>
-            <h3>Promote with review</h3>
-            <p>Review, edit, reject, or promote lessons before they become part of the searchable teaching set.</p>
-          </article>
+          <article><span class="number">01</span><h3>Authenticate once</h3><p>Use email/password in the web UI and OAuth Authorization Code + PKCE from MCP clients.</p></article>
+          <article><span class="number">02</span><h3>Review deliberately</h3><p>Validate quotes, edit candidate lessons, and promote only guidance the team trusts.</p></article>
+          <article><span class="number">03</span><h3>Reuse experience</h3><p>Search promoted examples from chat or browse them in the signed-in knowledge base.</p></article>
         </div>
       </section>
 
-      <section id="install" class="content-section">
-        <div class="section-heading">
-          <p class="eyebrow">Install</p>
-          <h2>Use Birdie as a Claude Code plugin.</h2>
-        </div>
+      <section id="deploy" class="content-section">
+        <div class="section-heading"><p class="eyebrow">Deploy</p><h2>Run one persistent Birdie service.</h2></div>
         <div class="split">
-          <div>
-            <p>
-              The published plugin ships with a bundled MCP server for macOS, Linux, and Windows. Plugin users do not
-              need to clone the repository, run <code>bun install</code>, or start a separate server. It does require
-              Node.js 22.13 or later, which runs the bundled server.
-            </p>
-            <pre><code>/plugin marketplace add nigelteosw/birdie
-/plugin install birdie</code></pre>
-          </div>
-          <div class="callout">
-            <h3>First run</h3>
-            <p>
-              Start a new Claude Code conversation and ask Birdie to set itself up. If you do not have a shared team
-              server URL, choose local mode.
-            </p>
-          </div>
+          <div><p>Build the Docker image on a host with a persistent volume mounted at <code>/data</code>. Set a public HTTPS origin, an auth secret, and bootstrap admin credentials.</p><pre><code>BETTER_AUTH_SECRET=at-least-32-characters
+BIRDIE_BASE_URL=https://birdie.example.com
+BIRDIE_ADMIN_EMAIL=admin@example.com
+BIRDIE_ADMIN_PASSWORD=at-least-12-characters
+DB_PATH=/data/birdie.db</code></pre></div>
+          <div class="callout"><h3>First start</h3><p>Birdie creates the configured admin only when that email does not exist. Future restarts do not reset its password. Sign in and create the remaining users from the Users tab.</p></div>
         </div>
-        <p>
-          Other MCP clients that can launch local stdio commands can run the same bundle with
-          <code>node /absolute/path/to/birdie/bin/birdie.mjs mcp</code>. The REST shared backend syncs data between
-          those local processes; it is not an MCP-over-HTTP server.
-        </p>
       </section>
 
-      <section class="content-section alt" aria-labelledby="local-mode">
-        <div class="section-heading">
-          <p class="eyebrow">Local mode</p>
-          <h2 id="local-mode">State stays under your home directory.</h2>
-        </div>
-        <div class="details-grid">
-          <article>
-            <h3>Config</h3>
-            <code>~/.birdie/config.json</code>
-            <p>Stores whether Birdie should use local storage or a shared remote server.</p>
-          </article>
-          <article>
-            <h3>Database</h3>
-            <code>~/.birdie/birdie.db</code>
-            <p>Stores captured traces, candidate lessons, review status, and promoted examples.</p>
-          </article>
-          <article>
-            <h3>Domain profile</h3>
-            <code>~/.birdie/domain.md</code>
-            <p>Optionally customizes the domain, typology, and mentorship-worthy guidance. In shared mode, the profile lives on the server instead.</p>
-          </article>
-        </div>
+      <section id="connect" class="content-section alt">
+        <div class="section-heading"><p class="eyebrow">Remote MCP</p><h2>Point clients at the hosted endpoint.</h2></div>
+        <div class="split"><div><pre><code>https://birdie.example.com/mcp</code></pre><p>The client discovers OAuth metadata, opens Birdie's sign-in and consent screens, then receives a token bound to the MCP resource. No local database or stdio bridge is needed.</p></div><div class="callout"><h3>Claude plugin</h3><p>The repository's plugin retains the proactive Birdie skill. It no longer launches a local server; configure the team's remote MCP URL separately.</p></div></div>
       </section>
 
       <section id="workflow" class="content-section">
-        <div class="section-heading">
-          <p class="eyebrow">Workflow</p>
-          <h2>Capture, review, then query.</h2>
-        </div>
+        <div class="section-heading"><p class="eyebrow">Workflow</p><h2>Grounded experience, with a human gate.</h2></div>
         <div class="workflow">
-          <article>
-            <h3>1. Capture a before/after edit</h3>
-            <p>Ask Birdie to capture an edit as a mentorship example. Include who submitted it, who it affected, and why the edit mattered.</p>
-          </article>
-          <article>
-            <h3>2. Extract a candidate lesson</h3>
-            <p>Run the extraction prompt for the trace. The assistant proposes the quote, change, rationale, typology, and playbook alignment.</p>
-          </article>
-          <article>
-            <h3>3. Review the queue</h3>
-            <p>
-              Birdie opens the review UI on demand, usually at <code>http://127.0.0.1:6677</code>. It reuses an existing
-              Birdie server on that port or falls back to a free port when needed.
-            </p>
-          </article>
-          <article>
-            <h3>4. Ask from reviewed examples</h3>
-            <p>Ask how a named person handled a similar situation. Birdie retrieves up to 12 relevant promoted lessons for the assistant to synthesize.</p>
-          </article>
+          <article><h3>1. Capture</h3><p>The signed-in user records a before/after example in chat or the web UI.</p></article>
+          <article><h3>2. Extract</h3><p>The MCP host proposes a quote, change, and rationale; Birdie verifies the quote.</p></article>
+          <article><h3>3. Review</h3><p>An authenticated reviewer edits, rejects, or promotes the candidate lesson.</p></article>
+          <article><h3>4. Retrieve</h3><p>Assistants search the promoted pool and synthesize only from returned lesson cards.</p></article>
         </div>
       </section>
 
       <section id="reference" class="content-section alt">
-        <div class="section-heading">
-          <p class="eyebrow">Reference</p>
-          <h2>Prompts, tools, and endpoints.</h2>
-        </div>
+        <div class="section-heading"><p class="eyebrow">Reference</p><h2>Hosted surfaces.</h2></div>
         <div class="reference-grid">
-          <article>
-            <h3>MCP prompts</h3>
-            <ul>
-              <li><code>setup-birdie</code></li>
-              <li><code>extract-lesson</code></li>
-              <li><code>configure-birdie</code></li>
-              <li><code>ask-lesson</code></li>
-            </ul>
-          </article>
-          <article>
-            <h3>MCP tools</h3>
-            <ul>
-              <li><code>complete_setup</code></li>
-              <li><code>save_domain_profile</code></li>
-              <li><code>open_review_queue</code></li>
-              <li><code>capture_trace</code></li>
-              <li><code>save_extraction</code></li>
-              <li><code>review_lesson</code></li>
-              <li><code>promote_lesson</code></li>
-              <li><code>ask_lesson</code></li>
-            </ul>
-          </article>
-          <article>
-            <h3>REST endpoints</h3>
-            <ul>
-              <li><code>POST /traces</code></li>
-              <li><code>GET /traces</code></li>
-              <li><code>POST /traces/:id/extract</code></li>
-              <li><code>GET /lessons</code></li>
-              <li><code>PATCH /lessons/:id</code></li>
-              <li><code>POST /lessons/:id/promote</code></li>
-              <li><code>GET /domain</code></li>
-              <li><code>PUT /domain</code></li>
-            </ul>
-          </article>
+          <article><h3>Public</h3><ul><li><code>GET /__birdie</code></li><li><code>/.well-known/*</code></li><li><code>/api/auth/*</code></li><li>Sign-in and consent pages</li></ul></article>
+          <article><h3>Authenticated</h3><ul><li><code>/traces</code></li><li><code>/lessons</code></li><li><code>/domain</code></li><li><code>/api/admin/users</code></li></ul></article>
+          <article><h3>MCP</h3><ul><li><code>POST /mcp</code></li><li><code>capture_trace</code></li><li><code>save_extraction</code></li><li><code>promote_lesson</code></li><li><code>ask_lesson</code></li></ul></article>
         </div>
       </section>
 
-      <section class="content-section" aria-labelledby="development">
-        <div class="section-heading">
-          <p class="eyebrow">Development</p>
-          <h2 id="development">Work on Birdie locally.</h2>
-        </div>
-        <div class="split">
-          <div>
-            <pre><code>bun install
+      <section class="content-section publish-section"><div class="section-heading"><p class="eyebrow">Development</p><h2>Build and verify.</h2></div><pre><code>bun install
 bun run build
-bun run test</code></pre>
-          </div>
-          <div>
-            <p>
-              The plugin only needs the MCP server. Run the REST API or web UI directly when you are iterating outside
-              the plugin flow.
-            </p>
-            <pre><code>bun run dev:backend -- web
-bun run dev:backend -- mcp</code></pre>
-          </div>
-        </div>
-      </section>
-
-      <section id="pages" class="content-section publish-section">
-        <div class="section-heading">
-          <p class="eyebrow">GitHub Pages</p>
-          <h2>Publish these docs from the <code>docs/</code> folder.</h2>
-        </div>
-        <ol class="steps">
-          <li>Push this repository to GitHub.</li>
-          <li>Open <strong>Settings</strong>, then <strong>Pages</strong>.</li>
-          <li>Set <strong>Source</strong> to <strong>Deploy from a branch</strong>.</li>
-          <li>Choose your default branch and the <strong>/docs</strong> folder.</li>
-          <li>Save. GitHub will publish the site at the URL shown on that page.</li>
-        </ol>
-      </section>
+bun test</code></pre></section>
     </main>
-
-    <footer class="site-footer">
-      <p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p>
-      <a href="https://github.com/nigelteosw/birdie">GitHub repository</a>
-    </footer>
+    <footer class="site-footer"><p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p><a href="https://github.com/nigelteosw/birdie">GitHub repository</a></footer>
   </body>
 </html>

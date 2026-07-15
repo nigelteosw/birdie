@@ -10,13 +10,6 @@
     "build": "bun run --cwd backend build && bun run --cwd web build",
     "test": "bun run --cwd backend test",
     "dev:backend": "bun run --cwd backend dev",
-    "dev:web": "bun run --cwd web dev",
-    "build:plugin-bundle": "bash scripts/build-plugin-bundle.sh"
-  },
-  "patchedDependencies": {
-    "fastmcp@1.27.7": "patches/fastmcp@1.27.7.patch"
-  },
-  "devDependencies": {
-    "esbuild": "^0.24.0"
+    "dev:web": "bun run --cwd web dev"
   }
 }

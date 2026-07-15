@@ -44,6 +44,12 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
         proxyTimeout: 0,
         timeout: 0,
         on: {
+          proxyRes(proxyResponse) {
+            if (proxyResponse.statusCode === 401 && options.baseUrl) {
+              proxyResponse.headers['www-authenticate'] =
+                `Bearer resource_metadata="${options.baseUrl}/.well-known/oauth-protected-resource/mcp"`;
+            }
+          },
           error(_error, _req, res) {
             if ('headersSent' in res && res.headersSent) {
               res.destroy();
@@ -113,6 +119,7 @@ function mountOAuthMetadata(app: Express, auth: BirdieAuth, baseUrl?: string): v
       try {
         const metadata = await oauthProviderResourceClient(auth).getActions().getProtectedResourceMetadata({
           resource: `${baseUrl}/mcp`,
+          authorization_servers: [`${baseUrl}/api/auth`],
           scopes_supported: ['birdie:read', 'birdie:write'],
         });
         res.json(metadata);

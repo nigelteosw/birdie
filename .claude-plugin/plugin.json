@@ -1,11 +1,5 @@
 {
   "name": "birdie",
   "version": "1.0.0",
-  "description": "Local-first mentorship capture for reviewed before/after edit lessons.",
-  "mcpServers": {
-    "birdie": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/birdie.mjs", "mcp"]
-    }
-  }
+  "description": "Proactive mentorship capture backed by a team's hosted Birdie MCP service."
 }

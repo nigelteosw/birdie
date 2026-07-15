@@ -1,6 +1,6 @@
-import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { Database } from 'bun:sqlite';
 
 export interface SqliteStatement {
   run(...params: unknown[]): unknown;
@@ -14,19 +14,8 @@ export interface SqliteDb {
   close(): void;
 }
 
-const require = createRequire(import.meta.url);
-
-// Bun ships its own faster `bun:sqlite`; the plugin binary run by end users
-// is plain Node, which only has `node:sqlite`. Pick whichever the current
-// runtime provides rather than forcing Node's driver on Bun (unsupported)
-// or vice versa.
 function openDriver(dbPath: string): SqliteDb {
-  if (typeof Bun !== 'undefined') {
-    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
-    return new Database(dbPath) as unknown as SqliteDb;
-  }
-  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
-  return new DatabaseSync(dbPath) as unknown as SqliteDb;
+  return new Database(dbPath) as unknown as SqliteDb;
 }
 
 export function openDb(dbPath: string): SqliteDb {

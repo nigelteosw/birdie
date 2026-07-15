@@ -24,7 +24,10 @@ export function createMcpAuthenticator(runtime: BirdieAuthRuntime, config: Hoste
     const authorization = req.headers.authorization;
     const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : undefined;
     const payload = await verifyAccessToken(token, {
-      verifyOptions: { audience: `${config.baseUrl}/mcp` },
+      verifyOptions: {
+        audience: `${config.baseUrl}/mcp`,
+        issuer: `${config.baseUrl}/api/auth`,
+      },
     });
     if (typeof payload.sub !== 'string') throw new Error('Access token is not associated with a user');
 

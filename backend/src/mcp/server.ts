@@ -16,6 +16,15 @@ export function createRemoteMcpServer(
     version: '0.1.0',
     authenticate: createMcpAuthenticator(authRuntime, config),
     health: { enabled: false },
+    oauth: {
+      enabled: true,
+      protectedResource: {
+        resource: `${config.baseUrl}/mcp`,
+        authorizationServers: [`${config.baseUrl}/api/auth`],
+        scopesSupported: ['birdie:read', 'birdie:write'],
+        bearerMethodsSupported: ['header'],
+      },
+    },
   });
   registerTools(server, ctx, config.baseUrl);
   registerPrompts(server, ctx);

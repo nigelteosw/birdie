@@ -10,5 +10,4 @@ data
 docs
 .claude
 .claude-plugin
-bin
 backend/test
