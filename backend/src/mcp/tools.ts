@@ -64,14 +64,14 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'open_review_queue',
-    description: 'Return the hosted Birdie web UI URL.',
+    description: 'Return the hosted Birdie web UI URL when the user asks to open or review the queue.',
     parameters: emptyParams,
     canAccess: hasScope('birdie:read'),
     execute: async () => json({ url: baseUrl }),
   });
   server.addTool({
     name: 'capture_trace',
-    description: 'Capture a before/after edit as an example for later lesson extraction.',
+    description: 'Capture a clearly reusable before/after correction using verbatim original and corrected text, then extract a pending lesson in the same turn.',
     parameters: captureTraceParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {
@@ -103,7 +103,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'save_extraction',
-    description: 'Save a candidate lesson. Birdie verifies its quote in code.',
+    description: 'Save a candidate lesson in pending_review. Copy quote exactly from the trace before_text and inspect quote_verified in the result.',
     parameters: saveExtractionParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args) => json(ctx.traceService.extract(args)),
@@ -124,7 +124,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'review_lesson',
-    description: 'Edit a lesson, save it for later, or reject it.',
+    description: 'Edit, defer, or reject a pending lesson. Supply an exact before_text quote to correct an unverified quote.',
     parameters: reviewLessonParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args) => {
@@ -134,7 +134,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'promote_lesson',
-    description: `${copy.privacyReminder} Then ${copy.promote}.`,
+    description: `${copy.privacyReminder} Promote only after explicit human approval of this lesson. Then ${copy.promote}.`,
     parameters: promoteLessonParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {
