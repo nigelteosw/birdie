@@ -15,8 +15,19 @@ describe('LessonRepository filters', () => {
     lessons = new LessonRepository(db);
   });
 
-  function createPromotedLesson(submittedBy: string, quote: string, whatChanged: string, whyItMatters: string) {
-    const trace = traces.create({ submitted_by: submittedBy, before_text: quote, after_text: 'after' });
+  function createPromotedLesson(
+    submittedBy: string,
+    quote: string,
+    whatChanged: string,
+    whyItMatters: string,
+    submittedByUserId?: string
+  ) {
+    const trace = traces.create({
+      submitted_by: submittedBy,
+      submitted_by_user_id: submittedByUserId,
+      before_text: quote,
+      after_text: 'after',
+    });
     const lesson = lessons.create({
       trace_id: trace.id,
       quote,
@@ -34,6 +45,16 @@ describe('LessonRepository filters', () => {
     const results = lessons.list({ status: 'promoted', submitted_by: 'Jane' });
     expect(results).toHaveLength(1);
     expect(results[0].submitted_by).toBe('Jane');
+  });
+
+  it('filters by stable submitter id even when display names collide', () => {
+    const jane = createPromotedLesson('Jane', 'uncapped indemnity', 'Capped it.', 'Risk control.', 'user-1');
+    createPromotedLesson('Jane', 'vague notice period', 'Set 30 days.', 'Clarity.', 'user-2');
+
+    const results = lessons.list({ status: 'promoted', submitted_by_user_id: 'user-1' });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe(jane.id);
+    expect(results[0].submitted_by_user_id).toBe('user-1');
   });
 
   it('filters by keyword across quote, what_changed, and why_it_matters', () => {

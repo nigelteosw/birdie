@@ -46,6 +46,7 @@ function migrate(db: SqliteDb): void {
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
       submitted_by TEXT NOT NULL,
+      submitted_by_user_id TEXT REFERENCES user(id),
       before_text TEXT NOT NULL,
       after_text TEXT NOT NULL,
       context_note TEXT,
@@ -64,6 +65,7 @@ function migrate(db: SqliteDb): void {
       why_it_matters TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending_review',
       reviewer TEXT,
+      reviewer_user_id TEXT REFERENCES user(id),
       reviewed_at TEXT,
       promoted_at TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -75,7 +77,16 @@ function migrate(db: SqliteDb): void {
   `);
   dropColumnsIfPresent(db, 'traces', ['submitted_by_role', 'junior_name', 'senior_name', 'playbook_ref', 'playbook_text']);
   dropColumnsIfPresent(db, 'lessons', ['typology', 'playbook_alignment', 'playbook_note']);
+  addColumnIfMissing(db, 'traces', 'submitted_by_user_id', 'TEXT REFERENCES user(id)');
+  addColumnIfMissing(db, 'lessons', 'reviewer_user_id', 'TEXT REFERENCES user(id)');
   setUpLessonsFts(db);
+}
+
+function addColumnIfMissing(db: SqliteDb, table: string, column: string, definition: string): void {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!existing.some((entry) => entry.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 // Best-effort keyword search index. Not every SQLite build has FTS5 compiled

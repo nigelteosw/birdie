@@ -4,6 +4,7 @@ export type LessonStatus = 'pending_review' | 'rejected' | 'promoted';
 export interface Trace {
   id: string;
   submitted_by: string;
+  submitted_by_user_id: string | null;
   before_text: string;
   after_text: string;
   context_note: string | null;
@@ -15,6 +16,7 @@ export interface Trace {
 
 export interface NewTrace {
   submitted_by: string;
+  submitted_by_user_id?: string | null;
   before_text: string;
   after_text: string;
   context_note?: string | null;
@@ -30,6 +32,7 @@ export interface Lesson {
   why_it_matters: string;
   status: LessonStatus;
   reviewer: string | null;
+  reviewer_user_id: string | null;
   reviewed_at: string | null;
   promoted_at: string | null;
   created_at: string;
@@ -37,6 +40,7 @@ export interface Lesson {
 
 export interface LessonWithTrace extends Lesson {
   submitted_by: string;
+  submitted_by_user_id: string | null;
 }
 
 export interface NewExtraction {
@@ -55,6 +59,7 @@ export interface LessonEdit {
 
 export interface PromotePayload {
   reviewer: string;
+  reviewer_user_id?: string | null;
   quote?: string;
   what_changed?: string;
   why_it_matters?: string;
@@ -63,6 +68,7 @@ export interface PromotePayload {
 export interface LessonFilters {
   status?: LessonStatus;
   submitted_by?: string;
+  submitted_by_user_id?: string;
   q?: string;
   limit?: number;
 }

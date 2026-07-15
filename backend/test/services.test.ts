@@ -63,6 +63,31 @@ describe('services', () => {
     expect(promoted.status).toBe('promoted');
   });
 
+  it('preserves stable user ids alongside display-name snapshots', () => {
+    const trace = traceService.capture({
+      submitted_by: 'Jane',
+      submitted_by_user_id: 'user-1',
+      before_text: 'uncapped indemnity',
+      after_text: 'capped indemnity',
+    });
+    expect(trace.submitted_by).toBe('Jane');
+    expect(trace.submitted_by_user_id).toBe('user-1');
+
+    const lesson = traceService.extract({
+      trace_id: trace.id,
+      quote: 'uncapped indemnity',
+      what_changed: 'Capped it.',
+      why_it_matters: 'Risk control.',
+    });
+    const promoted = lessonService.promote(lesson.id, {
+      reviewer: 'Sarah',
+      reviewer_user_id: 'user-2',
+    });
+    expect(promoted.reviewer).toBe('Sarah');
+    expect(promoted.reviewer_user_id).toBe('user-2');
+    expect(promoted.submitted_by_user_id).toBe('user-1');
+  });
+
   it('deletes a promoted lesson', () => {
     const trace = traceService.capture({
       submitted_by: 'Jane',

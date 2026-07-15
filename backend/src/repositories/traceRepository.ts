@@ -10,14 +10,15 @@ export class TraceRepository {
     this.db
       .prepare(
         `INSERT INTO traces (
-          id, submitted_by, before_text, after_text, context_note, source, status
+          id, submitted_by, submitted_by_user_id, before_text, after_text, context_note, source, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, 'captured'
+          ?, ?, ?, ?, ?, ?, ?, 'captured'
         )`
       )
       .run(
         id,
         input.submitted_by,
+        input.submitted_by_user_id ?? null,
         input.before_text,
         input.after_text,
         input.context_note ?? null,

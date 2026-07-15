@@ -42,6 +42,7 @@ describe('db migration', () => {
     expect(columns).not.toContain('submitted_by_role');
     expect(columns).not.toContain('junior_name');
     expect(columns).not.toContain('senior_name');
+    expect(columns).toContain('submitted_by_user_id');
 
     db.prepare(
       `INSERT INTO traces (id, submitted_by, before_text, after_text) VALUES ('trace-2', 'Jane', 'before2', 'after2')`
@@ -61,6 +62,11 @@ describe('db migration', () => {
     expect(columns).not.toContain('junior_name');
     expect(columns).not.toContain('senior_name');
     expect(columns).toContain('submitted_by');
+    expect(columns).toContain('submitted_by_user_id');
+    const lessonColumns = (db.prepare('PRAGMA table_info(lessons)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    );
+    expect(lessonColumns).toContain('reviewer_user_id');
     db.close();
   });
 
@@ -126,6 +132,8 @@ describe('db migration', () => {
     expect(lessonColumns).not.toContain('typology');
     expect(lessonColumns).not.toContain('playbook_alignment');
     expect(lessonColumns).not.toContain('playbook_note');
+    expect(traceColumns).toContain('submitted_by_user_id');
+    expect(lessonColumns).toContain('reviewer_user_id');
     const row = db.prepare('SELECT * FROM lessons WHERE id = ?').get('lesson-1') as { quote: string };
     expect(row.quote).toBe('quote');
     db.close();

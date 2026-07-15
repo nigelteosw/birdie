@@ -113,7 +113,7 @@ export class LessonRepository {
         `UPDATE lessons
          SET quote = ?, quote_verified = ?, what_changed = ?,
              why_it_matters = ?, status = 'promoted',
-             reviewer = ?, reviewed_at = ?, promoted_at = ?
+             reviewer = ?, reviewer_user_id = ?, reviewed_at = ?, promoted_at = ?
          WHERE id = ?`
       )
       .run(
@@ -122,6 +122,7 @@ export class LessonRepository {
         next.what_changed,
         next.why_it_matters,
         payload.reviewer.trim(),
+        payload.reviewer_user_id ?? null,
         now,
         now,
         id
@@ -155,7 +156,7 @@ export class LessonRepository {
 }
 
 function lessonSelect(usesFts = false): string {
-  return `SELECT l.*, t.submitted_by
+  return `SELECT l.*, t.submitted_by, t.submitted_by_user_id
           FROM lessons l
           JOIN traces t ON t.id = l.trace_id
           ${usesFts ? 'JOIN lessons_fts ON lessons_fts.id = l.id' : ''}`;
@@ -165,7 +166,7 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
   const clauses: string[] = [];
   const params: string[] = [];
   let usesFts = false;
-  for (const key of ['status', 'submitted_by'] as const) {
+  for (const key of ['status', 'submitted_by', 'submitted_by_user_id'] as const) {
     const value = filters[key];
     if (value) {
       clauses.push(key === 'status' ? `l.${key} = ?` : `t.${key} = ?`);
