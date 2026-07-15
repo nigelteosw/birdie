@@ -8,7 +8,14 @@ const hostedEnvSchema = z.object({
   BIRDIE_ADMIN_NAME: z.string().trim().min(1).optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(6677),
   MCP_INTERNAL_PORT: z.coerce.number().int().min(1).max(65535).default(6678),
+  BIRDIE_DB_ADAPTER: z.enum(['sqlite', 'postgres'], {
+    errorMap: () => ({ message: 'BIRDIE_DB_ADAPTER must be sqlite or postgres.' }),
+  }).default('sqlite'),
   DB_PATH: z.string().min(1).default('/data/birdie.db'),
+  DATABASE_URL: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().url('DATABASE_URL must be a valid PostgreSQL URL.').optional()
+  ),
   DOMAIN_PROFILE_PATH: z.string().min(1).default('/data/domain.md'),
 });
 
@@ -20,7 +27,9 @@ export interface HostedConfig {
   adminName: string;
   port: number;
   mcpInternalPort: number;
+  dbAdapter: 'sqlite' | 'postgres';
   dbPath: string;
+  databaseUrl?: string;
   domainPath: string;
 }
 
@@ -30,6 +39,9 @@ export function readHostedConfig(env: Record<string, string | undefined> = proce
   const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
   if (url.protocol !== 'https:' && !isLoopback) {
     throw new Error('BIRDIE_BASE_URL must use HTTPS outside localhost.');
+  }
+  if (parsed.BIRDIE_DB_ADAPTER === 'postgres' && !parsed.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required when BIRDIE_DB_ADAPTER=postgres.');
   }
 
   const adminEmail = parsed.BIRDIE_ADMIN_EMAIL.trim().toLowerCase();
@@ -41,7 +53,9 @@ export function readHostedConfig(env: Record<string, string | undefined> = proce
     adminName: parsed.BIRDIE_ADMIN_NAME?.trim() || adminEmail.split('@')[0],
     port: parsed.PORT,
     mcpInternalPort: parsed.MCP_INTERNAL_PORT,
+    dbAdapter: parsed.BIRDIE_DB_ADAPTER,
     dbPath: parsed.DB_PATH,
+    databaseUrl: parsed.DATABASE_URL,
     domainPath: parsed.DOMAIN_PROFILE_PATH,
   };
 }

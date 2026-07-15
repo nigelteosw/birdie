@@ -24,41 +24,49 @@ const promoteBody = z.object({
 export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
 
-  router.get('/', requireScope('birdie:read'), (req, res) => {
+  router.get('/', requireScope('birdie:read'), async (req, res) => {
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
-    res.json(
-      ctx.lessonService.list({
+    try {
+      res.json(
+        await ctx.lessonService.list({
         status: parsed.data.status,
         q: parsed.data.q,
         limit: parsed.data.limit,
         submitted_by_user_id: parsed.data.mine ? req.user!.id : undefined,
-      })
-    );
-  });
-
-  router.get('/:id', requireScope('birdie:read'), (req, res) => {
-    const lesson = ctx.lessonService.get(req.params.id);
-    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    res.json(lesson);
-  });
-
-  router.patch('/:id', requireScope('birdie:write'), (req, res) => {
-    const parsed = editBody.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
-    try {
-      res.json(ctx.lessonService.review(req.params.id, parsed.data));
+        })
+      );
     } catch (err) {
       sendServiceError(res, err);
     }
   });
 
-  router.post('/:id/promote', requireScope('birdie:write'), (req, res) => {
+  router.get('/:id', requireScope('birdie:read'), async (req, res) => {
+    try {
+      const lesson = await ctx.lessonService.get(req.params.id);
+      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+      res.json(lesson);
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.patch('/:id', requireScope('birdie:write'), async (req, res) => {
+    const parsed = editBody.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    try {
+      res.json(await ctx.lessonService.review(req.params.id, parsed.data));
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.post('/:id/promote', requireScope('birdie:write'), async (req, res) => {
     const parsed = promoteBody.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     try {
       res.json(
-        ctx.lessonService.promote(req.params.id, {
+        await ctx.lessonService.promote(req.params.id, {
           ...parsed.data,
           reviewer: req.user!.name,
           reviewer_user_id: req.user!.id,
@@ -69,9 +77,9 @@ export function lessonsRouter(ctx: AppContext): Router {
     }
   });
 
-  router.delete('/:id', requireScope('birdie:write'), (req, res) => {
+  router.delete('/:id', requireScope('birdie:write'), async (req, res) => {
     try {
-      ctx.lessonService.delete(req.params.id);
+      await ctx.lessonService.delete(req.params.id);
       res.status(204).end();
     } catch (err) {
       sendServiceError(res, err);

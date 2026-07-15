@@ -11,7 +11,9 @@ services:
       BIRDIE_ADMIN_EMAIL: ${BIRDIE_ADMIN_EMAIL:?Set BIRDIE_ADMIN_EMAIL in .env}
       BIRDIE_ADMIN_PASSWORD: ${BIRDIE_ADMIN_PASSWORD:?Set BIRDIE_ADMIN_PASSWORD in .env}
       BIRDIE_ADMIN_NAME: ${BIRDIE_ADMIN_NAME:-Birdie Admin}
+      BIRDIE_DB_ADAPTER: ${BIRDIE_DB_ADAPTER:-sqlite}
       DB_PATH: /data/birdie.db
+      DATABASE_URL: ${DATABASE_URL:-}
       DOMAIN_PROFILE_PATH: /data/domain.md
     volumes:
       - birdie-data:/data

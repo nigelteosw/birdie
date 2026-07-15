@@ -11,7 +11,7 @@ The same account works in the browser and through MCP. On first start, Birdie cr
 - Express exposes the web UI, REST API, Better Auth routes, OAuth metadata, and `/mcp` through one public port.
 - Better Auth provides email/password sessions for the web UI and OAuth 2.1 authorization for MCP clients.
 - FastMCP listens on a loopback-only internal port and is proxied by Express.
-- SQLite stores users, sessions, captures, and reviewed lessons in one persistent data directory.
+- A database adapter stores users, sessions, captures, and reviewed lessons. SQLite is the default; PostgreSQL with pgvector is optional.
 - The React/Vite application is compiled into the production image and served by Express.
 
 Birdie does not run a local memory database or stdio bridge. Local MCP use is a personal connection to the same hosted endpoint; repository files such as `MEMORY.md` remain a separate concern.
@@ -78,17 +78,34 @@ bun run build
 | `BIRDIE_ADMIN_NAME` | no | email prefix | Admin display name. |
 | `PORT` | no | `6677` | Public web, REST, OAuth, and MCP listener. |
 | `MCP_INTERNAL_PORT` | no | `6678` | Loopback-only FastMCP listener; do not publish it. |
+| `BIRDIE_DB_ADAPTER` | no | `sqlite` | Database adapter: `sqlite` or `postgres`. |
 | `DB_PATH` | no | `/data/birdie.db` | Shared SQLite database. |
+| `DATABASE_URL` | with PostgreSQL | — | PostgreSQL connection URL; the database must permit the `vector` extension. |
 | `DOMAIN_PROFILE_PATH` | no | `/data/domain.md` | Shared domain guidance. |
 
 See [.env.example](.env.example) for a copy-ready container configuration.
+
+### PostgreSQL and pgvector
+
+To run Birdie on PostgreSQL, configure:
+
+```env
+BIRDIE_DB_ADAPTER=postgres
+DATABASE_URL=postgresql://birdie:password@database-host:5432/birdie
+```
+
+On startup, Birdie runs the Better Auth schema migrations, creates its trace and lesson tables, enables pgvector with `CREATE EXTENSION IF NOT EXISTS vector`, and creates an HNSW cosine index for promoted-lesson retrieval.
+
+Birdie generates its default vectors locally by hashing overlapping character trigrams into 512 dimensions. This provides fast fuzzy lexical matching without a model, API key, or inference service; it should not be described as model-based semantic understanding.
+
+Custom builds can implement the [`DBAdapter`](backend/src/adapters/types.ts) contract, export it through the adapter entrypoint, and pass it as the second argument to `serveBirdie(config, adapter)`. Adapter operations are asynchronous so remote databases do not require changes to the service, REST, or MCP layers.
 
 ## Deploying Birdie
 
 The included Dockerfile builds a standard OCI image and does not depend on a specific hosting platform. For production:
 
 1. Terminate TLS in front of Birdie and set `BIRDIE_BASE_URL` to the exact public HTTPS origin.
-2. Mount persistent storage at `/data` and run one writable application replica for the SQLite database.
+2. For SQLite, mount persistent storage at `/data` and run one writable application replica. PostgreSQL deployments can scale application replicas against the shared database.
 3. Publish only `PORT`; keep `MCP_INTERNAL_PORT` private inside the container.
 4. Configure the platform's HTTP health check to request `GET /__birdie`.
 5. Store `BETTER_AUTH_SECRET` and the bootstrap credentials in the platform's secret manager.

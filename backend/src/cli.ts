@@ -8,42 +8,58 @@ import { startRemoteMcpServer } from './mcp/httpServer.js';
 import { createRemoteMcpServer } from './mcp/server.js';
 import { readHostedConfig, type HostedConfig } from './runtimeConfig.js';
 import { createServer } from './server.js';
+import { createConfiguredDBAdapter } from './adapters/factory.js';
+import type { DBAdapter } from './adapters/types.js';
 
 export interface BirdieService {
   config: HostedConfig;
   stop(): Promise<void>;
 }
 
-export async function serveBirdie(config = readHostedConfig()): Promise<BirdieService> {
-  const authRuntime = createBirdieAuth(config);
-  await initializeAuth(authRuntime, config);
-
-  const ctx = buildHostedContext(config.dbPath, config.domainPath);
-  const mcp = createRemoteMcpServer(ctx, authRuntime, config);
-  await startRemoteMcpServer(mcp, config);
-
-  const app = createServer(ctx, {
-    auth: authRuntime.auth,
-    authRuntime,
-    baseUrl: config.baseUrl,
-    mcpTarget: `http://127.0.0.1:${config.mcpInternalPort}`,
-  });
-
-  let publicServer: Server;
+export async function serveBirdie(
+  config = readHostedConfig(),
+  db: DBAdapter = createConfiguredDBAdapter(config)
+): Promise<BirdieService> {
+  let mcp: ReturnType<typeof createRemoteMcpServer> | undefined;
+  let publicServer: Server | undefined;
   try {
+    const authRuntime = createBirdieAuth(config, db.authDatabase);
+    await initializeAuth(authRuntime, config, db.users);
+    await db.initialize();
+
+    const ctx = buildHostedContext(db, config.domainPath);
+    mcp = createRemoteMcpServer(ctx, authRuntime, config, db.users);
+    await startRemoteMcpServer(mcp, config);
+
+    const app = createServer(ctx, {
+      auth: authRuntime.auth,
+      authRuntime,
+      userAdminStore: db.users,
+      baseUrl: config.baseUrl,
+      mcpTarget: `http://127.0.0.1:${config.mcpInternalPort}`,
+    });
     publicServer = await listen(app, config.port);
   } catch (error) {
-    await mcp.stop();
-    authRuntime.database.close();
+    await Promise.allSettled([
+      ...(publicServer ? [close(publicServer)] : []),
+      ...(mcp ? [mcp.stop()] : []),
+      db.close(),
+    ]);
     throw error;
   }
 
   console.error(`Birdie listening on ${config.baseUrl}`);
+  let stopped = false;
   return {
     config,
     async stop() {
-      await Promise.all([close(publicServer), mcp.stop()]);
-      authRuntime.database.close();
+      if (stopped) return;
+      stopped = true;
+      try {
+        await Promise.all([close(publicServer), mcp.stop()]);
+      } finally {
+        await db.close();
+      }
     },
   };
 }
@@ -72,7 +88,9 @@ async function main(): Promise<void> {
   await serveBirdie();
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

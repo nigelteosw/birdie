@@ -6,16 +6,18 @@ import type { HostedConfig } from '../runtimeConfig.js';
 import { createMcpAuthenticator, type McpSession } from './principal.js';
 import { registerPrompts } from './prompts.js';
 import { registerTools } from './tools.js';
+import type { UserAdminStore } from '../adapters/types.js';
 
 export function createRemoteMcpServer(
   ctx: AppContext,
   authRuntime: BirdieAuthRuntime,
-  config: HostedConfig
+  config: HostedConfig,
+  users: UserAdminStore
 ): FastMCP<McpSession> {
   const server = new FastMCP<McpSession>({
     name: 'birdie',
     version: '0.1.0',
-    authenticate: createMcpAuthenticator(authRuntime, config),
+    authenticate: createMcpAuthenticator(authRuntime, config, users),
     health: { enabled: false },
     oauth: {
       enabled: true,

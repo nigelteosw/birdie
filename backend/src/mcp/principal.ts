@@ -3,21 +3,18 @@ import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resourc
 import type { BirdieAuthRuntime } from '../auth.js';
 import type { AuthenticatedUser, BirdieScope } from '../authPrincipal.js';
 import type { HostedConfig } from '../runtimeConfig.js';
+import type { UserAdminStore } from '../adapters/types.js';
 
 export interface McpSession {
   [key: string]: unknown;
   user: AuthenticatedUser;
 }
 
-interface AuthUserRow {
-  id: string;
-  email: string;
-  name: string;
-  role: string | null;
-  banned: number | boolean | null;
-}
-
-export function createMcpAuthenticator(runtime: BirdieAuthRuntime, config: HostedConfig) {
+export function createMcpAuthenticator(
+  runtime: BirdieAuthRuntime,
+  config: HostedConfig,
+  users: UserAdminStore
+) {
   const verifyAccessToken = oauthProviderResourceClient(runtime.auth).getActions().verifyAccessToken;
 
   return async (req: IncomingMessage): Promise<McpSession> => {
@@ -31,9 +28,7 @@ export function createMcpAuthenticator(runtime: BirdieAuthRuntime, config: Hoste
     });
     if (typeof payload.sub !== 'string') throw new Error('Access token is not associated with a user');
 
-    const user = runtime.database
-      .query<AuthUserRow, [string]>('SELECT id, email, name, role, banned FROM user WHERE id = ?')
-      .get(payload.sub);
+    const user = await users.findById(payload.sub);
     if (!user || user.banned === true || user.banned === 1) throw new Error('User is disabled');
 
     const scopes = new Set(

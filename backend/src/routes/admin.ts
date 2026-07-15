@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { fromNodeHeaders } from 'better-auth/node';
 import { z } from 'zod';
 import type { BirdieAuthRuntime } from '../auth.js';
+import type { UserAdminStore } from '../adapters/types.js';
 import { requireAdmin } from '../authPrincipal.js';
 
 const createUserBody = z.object({
@@ -11,7 +12,7 @@ const createUserBody = z.object({
 });
 const passwordBody = z.object({ password: z.string().min(12) });
 
-export function adminRouter(runtime: BirdieAuthRuntime): Router {
+export function adminRouter(runtime: BirdieAuthRuntime, users: UserAdminStore): Router {
   const router = Router();
   router.use(requireAdmin);
 
@@ -57,7 +58,7 @@ export function adminRouter(runtime: BirdieAuthRuntime): Router {
 
   router.post('/users/:id/ban', async (req, res) => {
     try {
-      if (isEnabledAdmin(runtime, req.params.id) && countEnabledAdmins(runtime) <= 1) {
+      if (await users.isEnabledAdmin(req.params.id) && await users.countEnabledAdmins() <= 1) {
         return res.status(409).json({ error: 'Birdie must keep at least one enabled administrator.' });
       }
       await runtime.auth.api.banUser({
@@ -95,20 +96,6 @@ export function adminRouter(runtime: BirdieAuthRuntime): Router {
   });
 
   return router;
-}
-
-function isEnabledAdmin(runtime: BirdieAuthRuntime, userId: string): boolean {
-  const user = runtime.database
-    .query<{ role: string | null; banned: number | null }, [string]>('SELECT role, banned FROM user WHERE id = ?')
-    .get(userId);
-  return Boolean(user && user.banned !== 1 && String(user.role ?? '').split(',').includes('admin'));
-}
-
-function countEnabledAdmins(runtime: BirdieAuthRuntime): number {
-  const users = runtime.database
-    .query<{ role: string | null }, []>('SELECT role FROM user WHERE banned IS NULL OR banned = 0')
-    .all();
-  return users.filter((user) => String(user.role ?? '').split(',').includes('admin')).length;
 }
 
 function sendError(res: { status: (code: number) => { json: (body: unknown) => void } }, error: unknown): void {

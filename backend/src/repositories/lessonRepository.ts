@@ -49,6 +49,17 @@ export class LessonRepository {
     return row ? rowToLesson(row) : undefined;
   }
 
+  getByIds(ids: string[], filters: Omit<LessonFilters, 'q' | 'limit'> = {}): LessonWithTrace[] {
+    const lessons = ids
+      .map((id) => this.getById(id))
+      .filter((lesson): lesson is LessonWithTrace => lesson !== undefined);
+    return lessons.filter((lesson) =>
+      (!filters.status || lesson.status === filters.status) &&
+      (!filters.submitted_by || lesson.submitted_by === filters.submitted_by) &&
+      (!filters.submitted_by_user_id || lesson.submitted_by_user_id === filters.submitted_by_user_id)
+    );
+  }
+
   list(filters: LessonFilters): LessonWithTrace[] {
     const { where, params, usesFts } = filterWhere(filters, this.ftsAvailable);
     const limit = normalizeLimit(filters.limit);

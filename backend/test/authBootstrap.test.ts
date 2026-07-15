@@ -5,6 +5,7 @@ import { describe, expect, it } from 'bun:test';
 import { createBirdieAuth } from '../src/auth.js';
 import { bootstrapAdmin, initializeAuth } from '../src/authBootstrap.js';
 import type { HostedConfig } from '../src/runtimeConfig.js';
+import { SQLiteDBAdapter } from '../src/adapters/sqlite/dbAdapter.js';
 
 function config(): HostedConfig {
   const dir = mkdtempSync(join(tmpdir(), 'birdie-auth-'));
@@ -16,6 +17,7 @@ function config(): HostedConfig {
     adminName: 'Birdie Admin',
     port: 6677,
     mcpInternalPort: 6678,
+    dbAdapter: 'sqlite',
     dbPath: join(dir, 'birdie.db'),
     domainPath: join(dir, 'domain.md'),
   };
@@ -24,9 +26,10 @@ function config(): HostedConfig {
 describe('auth bootstrap', () => {
   it('migrates auth storage and creates a usable admin once', async () => {
     const settings = config();
-    const runtime = createBirdieAuth(settings);
-    const first = await initializeAuth(runtime, settings);
-    const second = await initializeAuth(runtime, settings);
+    const db = new SQLiteDBAdapter(settings.dbPath);
+    const runtime = createBirdieAuth(settings, db.authDatabase);
+    const first = await initializeAuth(runtime, settings, db.users);
+    const second = await initializeAuth(runtime, settings, db.users);
 
     expect(first.created).toBe(true);
     expect(first.user.email).toBe(settings.adminEmail);
@@ -37,6 +40,7 @@ describe('auth bootstrap', () => {
       body: { email: settings.adminEmail, password: settings.adminPassword },
     });
     expect(signedIn.user.email).toBe(settings.adminEmail);
+    await db.close();
   });
 
   it('promotes an existing account without recreating or resetting it', async () => {

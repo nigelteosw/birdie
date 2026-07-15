@@ -16,6 +16,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     PORT=6677 \
+    BIRDIE_DB_ADAPTER=sqlite \
     DB_PATH=/data/birdie.db \
     DOMAIN_PROFILE_PATH=/data/domain.md
 

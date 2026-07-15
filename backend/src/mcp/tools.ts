@@ -76,7 +76,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {
       const user = requireSession(request.session).user;
-      return json(ctx.traceService.capture({
+      return json(await ctx.traceService.capture({
         ...args,
         submitted_by: user.name,
         submitted_by_user_id: user.id,
@@ -89,7 +89,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     parameters: getTraceParams,
     canAccess: hasScope('birdie:read'),
     execute: async (args) => {
-      const trace = ctx.traceService.get(args.trace_id);
+      const trace = await ctx.traceService.get(args.trace_id);
       if (!trace) throw new Error(`Trace not found: ${args.trace_id}`);
       return json(trace);
     },
@@ -99,14 +99,14 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     description: 'Mark an example as not worth turning into a lesson.',
     parameters: skipExtractionParams,
     canAccess: hasScope('birdie:write'),
-    execute: async (args) => json(ctx.traceService.skip(args.trace_id, args.reason)),
+    execute: async (args) => json(await ctx.traceService.skip(args.trace_id, args.reason)),
   });
   server.addTool({
     name: 'save_extraction',
     description: 'Save a candidate lesson in pending_review. Copy quote exactly from the trace before_text and inspect quote_verified in the result.',
     parameters: saveExtractionParams,
     canAccess: hasScope('birdie:write'),
-    execute: async (args) => json(ctx.traceService.extract(args)),
+    execute: async (args) => json(await ctx.traceService.extract(args)),
   });
   server.addTool({
     name: 'list_lessons',
@@ -115,7 +115,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     canAccess: hasScope('birdie:read'),
     execute: async (args, request) => {
       const user = requireSession(request.session).user;
-      return json(ctx.lessonService.list({
+      return json(await ctx.lessonService.list({
         status: args.status,
         submitted_by_user_id: args.mine ? user.id : undefined,
         limit: args.limit,
@@ -129,7 +129,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     canAccess: hasScope('birdie:write'),
     execute: async (args) => {
       const { lesson_id, ...changes } = args;
-      return json(ctx.lessonService.review(lesson_id, changes));
+      return json(await ctx.lessonService.review(lesson_id, changes));
     },
   });
   server.addTool({
@@ -140,7 +140,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     execute: async (args, request) => {
       const user = requireSession(request.session).user;
       const { lesson_id, ...changes } = args;
-      return json(ctx.lessonService.promote(lesson_id, {
+      return json(await ctx.lessonService.promote(lesson_id, {
         ...changes,
         reviewer: user.name,
         reviewer_user_id: user.id,
@@ -152,7 +152,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     description: 'Find promoted lessons relevant to a question for the client to synthesize.',
     parameters: askLessonParams,
     canAccess: hasScope('birdie:read'),
-    execute: async (args) => json(ctx.lessonService.list({
+    execute: async (args) => json(await ctx.lessonService.list({
       status: 'promoted',
       submitted_by: args.person,
       q: args.question,

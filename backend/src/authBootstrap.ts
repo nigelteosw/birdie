@@ -1,6 +1,7 @@
 import { getMigrations } from 'better-auth/db/migration';
 import type { BirdieAuthRuntime } from './auth.js';
 import type { HostedConfig } from './runtimeConfig.js';
+import type { UserAdminStore } from './adapters/types.js';
 
 export interface BootstrapUser {
   id: string;
@@ -34,13 +35,18 @@ export async function bootstrapAdmin(store: AdminBootstrapStore, config: HostedC
   return { created: false, user: existing };
 }
 
-export async function initializeAuth(runtime: BirdieAuthRuntime, config: HostedConfig) {
+export async function initializeAuth(
+  runtime: BirdieAuthRuntime,
+  config: HostedConfig,
+  users?: UserAdminStore
+) {
   const { runMigrations } = await getMigrations(runtime.auth.options);
   await runMigrations();
 
   const store: AdminBootstrapStore = {
     findByEmail(email) {
-      return runtime.database
+      if (users) return users.findByEmail(email);
+      return (runtime.database as DatabaseLike)
         .query<BootstrapUser, [string]>('SELECT id, email, name, role FROM user WHERE lower(email) = lower(?)')
         .get(email) ?? undefined;
     },
@@ -49,14 +55,24 @@ export async function initializeAuth(runtime: BirdieAuthRuntime, config: HostedC
       return result.user;
     },
     setRole(userId, role) {
-      runtime.database
+      if (users) return users.setRole(userId, role);
+      (runtime.database as DatabaseLike)
         .query('UPDATE user SET role = ?, updatedAt = ? WHERE id = ?')
         .run(role, new Date().toISOString(), userId);
-      const user = runtime.database.query<BootstrapUser, [string]>('SELECT id, email, name, role FROM user WHERE id = ?').get(userId);
+      const user = (runtime.database as DatabaseLike)
+        .query<BootstrapUser, [string]>('SELECT id, email, name, role FROM user WHERE id = ?')
+        .get(userId);
       if (!user) throw new Error('Bootstrapped admin user disappeared during role update.');
       return user;
     },
   };
 
   return bootstrapAdmin(store, config);
+}
+
+interface DatabaseLike {
+  query<Row = unknown, Params extends unknown[] = unknown[]>(sql: string): {
+    get(...params: Params): Row | undefined;
+    run(...params: unknown[]): unknown;
+  };
 }

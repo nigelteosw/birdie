@@ -1,9 +1,8 @@
-import { openDb } from './db.js';
 import { loadDomainProfile, type DomainProfile } from './domain.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { LessonRepository } from './repositories/lessonRepository.js';
-import { TraceRepository } from './repositories/traceRepository.js';
+import type { DBAdapter } from './adapters/types.js';
+import { SQLiteDBAdapter } from './adapters/sqlite/dbAdapter.js';
 import { LessonService } from './services/lessonService.js';
 import { TraceService } from './services/traceService.js';
 
@@ -14,13 +13,11 @@ export interface AppContext {
   updateDomainProfile(content: string): { path: string; profile: DomainProfile };
 }
 
-export function buildHostedContext(dbPath: string, domainPath: string): AppContext {
-  const db = openDb(dbPath);
-  const traceRepo = new TraceRepository(db);
-  const lessonRepo = new LessonRepository(db);
+export function buildHostedContext(dbOrPath: DBAdapter | string, domainPath: string): AppContext {
+  const db = typeof dbOrPath === 'string' ? new SQLiteDBAdapter(dbOrPath) : dbOrPath;
   let domainProfile = loadDomainProfile(domainPath);
-  const traceService = new TraceService(traceRepo, lessonRepo);
-  const lessonService = new LessonService(lessonRepo, traceRepo);
+  const traceService = new TraceService(db);
+  const lessonService = new LessonService(db);
   return {
     traceService,
     lessonService,

@@ -5,6 +5,7 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { admin, jwt } from 'better-auth/plugins';
 import type { HostedConfig } from './runtimeConfig.js';
+import type { BetterAuthOptions } from 'better-auth';
 
 const oauthScopes: ['openid', 'profile', 'email', 'offline_access', 'birdie:read', 'birdie:write'] = [
   'openid',
@@ -15,9 +16,16 @@ const oauthScopes: ['openid', 'profile', 'email', 'offline_access', 'birdie:read
   'birdie:write',
 ];
 
-export function createBirdieAuth(config: HostedConfig) {
-  mkdirSync(dirname(config.dbPath), { recursive: true });
-  const database = new Database(config.dbPath);
+export function createBirdieAuth(
+  config: HostedConfig,
+  suppliedDatabase?: NonNullable<BetterAuthOptions['database']>
+) {
+  let localDatabase: Database | undefined;
+  if (!suppliedDatabase) {
+    mkdirSync(dirname(config.dbPath), { recursive: true });
+    localDatabase = new Database(config.dbPath);
+  }
+  const database = suppliedDatabase ?? localDatabase!;
   const auth = betterAuth({
     appName: 'Birdie',
     baseURL: config.baseUrl,

@@ -16,9 +16,28 @@ describe('readHostedConfig', () => {
       adminName: 'admin',
       port: 6677,
       mcpInternalPort: 6678,
+      dbAdapter: 'sqlite',
       dbPath: '/data/birdie.db',
+      databaseUrl: undefined,
       domainPath: '/data/domain.md',
     });
+  });
+
+  it('selects PostgreSQL when configured with a database URL', () => {
+    expect(readHostedConfig({
+      ...valid,
+      BIRDIE_DB_ADAPTER: 'postgres',
+      DATABASE_URL: 'postgresql://birdie:secret@db.example.com:5432/birdie',
+    })).toMatchObject({
+      dbAdapter: 'postgres',
+      databaseUrl: 'postgresql://birdie:secret@db.example.com:5432/birdie',
+    });
+  });
+
+  it('requires a PostgreSQL URL only for the PostgreSQL adapter', () => {
+    expect(() => readHostedConfig({ ...valid, BIRDIE_DB_ADAPTER: 'postgres' })).toThrow('DATABASE_URL');
+    expect(() => readHostedConfig({ ...valid, BIRDIE_DB_ADAPTER: 'mysql' })).toThrow('BIRDIE_DB_ADAPTER');
+    expect(readHostedConfig({ ...valid, DATABASE_URL: '' }).dbAdapter).toBe('sqlite');
   });
 
   it('accepts HTTP only for loopback development origins', () => {

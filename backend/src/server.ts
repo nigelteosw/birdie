@@ -19,6 +19,7 @@ import {
   type PrincipalResolver,
 } from './authPrincipal.js';
 import type { AppContext } from './context.js';
+import type { UserAdminStore } from './adapters/types.js';
 import { lessonsRouter } from './routes/lessons.js';
 import { tracesRouter } from './routes/traces.js';
 import { adminRouter } from './routes/admin.js';
@@ -29,11 +30,15 @@ export interface ServerAuthOptions {
   principalResolver?: PrincipalResolver;
   baseUrl?: string;
   mcpTarget?: string;
+  userAdminStore?: UserAdminStore;
 }
 
 const rejectAnonymous: PrincipalResolver = { resolve: async () => null };
 
 export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): Express {
+  if (Boolean(options.authRuntime) !== Boolean(options.userAdminStore)) {
+    throw new Error('authRuntime and userAdminStore must be supplied together.');
+  }
   const app = express();
   if (options.mcpTarget) {
     app.use(
@@ -81,7 +86,9 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
   const principalResolver = options.principalResolver ??
     (options.auth ? createSessionPrincipalResolver(options.auth) : rejectAnonymous);
   const authenticate = requirePrincipal(principalResolver);
-  if (options.authRuntime) app.use('/api/admin', authenticate, adminRouter(options.authRuntime));
+  if (options.authRuntime && options.userAdminStore) {
+    app.use('/api/admin', authenticate, adminRouter(options.authRuntime, options.userAdminStore));
+  }
   app.use('/traces', authenticate, tracesRouter(ctx));
   app.use('/lessons', authenticate, lessonsRouter(ctx));
   app.get('/domain', authenticate, requireScope('birdie:read'), (_req, res) => {
