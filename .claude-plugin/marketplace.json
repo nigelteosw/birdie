@@ -7,7 +7,7 @@
     {
       "name": "birdie",
       "source": "./",
-      "description": "Local-first mentorship capture for reviewed before/after edit lessons."
+      "description": "Authenticated mentorship capture backed by a team's hosted Birdie MCP service."
     }
   ]
 }
