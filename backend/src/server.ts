@@ -3,6 +3,13 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { toNodeHandler } from 'better-auth/node';
+import { fromNodeHeaders } from 'better-auth/node';
+import {
+  oauthProviderAuthServerMetadata,
+  oauthProviderOpenIdConfigMetadata,
+} from '@better-auth/oauth-provider';
+import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import type { BirdieAuth } from './auth.js';
 import {
   createSessionPrincipalResolver,
@@ -17,15 +24,42 @@ import { tracesRouter } from './routes/traces.js';
 export interface ServerAuthOptions {
   auth?: BirdieAuth;
   principalResolver?: PrincipalResolver;
+  baseUrl?: string;
+  mcpTarget?: string;
 }
 
 const rejectAnonymous: PrincipalResolver = { resolve: async () => null };
 
 export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): Express {
   const app = express();
+  if (options.mcpTarget) {
+    app.use(
+      '/mcp',
+      createProxyMiddleware({
+        target: options.mcpTarget,
+        changeOrigin: false,
+        pathRewrite: () => '/mcp',
+        proxyTimeout: 0,
+        timeout: 0,
+        on: {
+          error(_error, _req, res) {
+            if ('headersSent' in res && res.headersSent) {
+              res.destroy();
+              return;
+            }
+            if ('writeHead' in res) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Birdie MCP is temporarily unavailable' }));
+            }
+          },
+        },
+      })
+    );
+  }
   if (options.auth) {
     const authHandler = toNodeHandler(options.auth);
-    app.all(['/api/auth/*', '/.well-known/*'], authHandler);
+    app.all('/api/auth/*', authHandler);
+    mountOAuthMetadata(app, options.auth, options.baseUrl);
   }
 
   // Public liveness marker and static auth pages must remain reachable before
@@ -59,6 +93,45 @@ export function createServer(ctx: AppContext, options: ServerAuthOptions = {}): 
     app.get('*', (_req, res) => res.sendFile(join(dist, 'index.html')));
   }
   return app;
+}
+
+function mountOAuthMetadata(app: Express, auth: BirdieAuth, baseUrl?: string): void {
+  const authorizationMetadata = oauthProviderAuthServerMetadata(auth);
+  const openIdMetadata = oauthProviderOpenIdConfigMetadata(auth);
+  app.get('/.well-known/oauth-authorization-server', (req, res, next) => {
+    forwardMetadata(authorizationMetadata, req, res).catch(next);
+  });
+  app.get('/.well-known/openid-configuration', (req, res, next) => {
+    forwardMetadata(openIdMetadata, req, res).catch(next);
+  });
+
+  if (baseUrl) {
+    app.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/*'], async (_req, res, next) => {
+      try {
+        const metadata = await oauthProviderResourceClient(auth).getActions().getProtectedResourceMetadata({
+          resource: `${baseUrl}/mcp`,
+          scopes_supported: ['birdie:read', 'birdie:write'],
+        });
+        res.json(metadata);
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+}
+
+async function forwardMetadata(
+  handler: (request: Request) => Promise<Response>,
+  req: express.Request,
+  res: express.Response
+): Promise<void> {
+  const response = await handler(
+    new Request(`${req.protocol}://${req.get('host')}${req.originalUrl}`, {
+      headers: fromNodeHeaders(req.headers),
+    })
+  );
+  response.headers.forEach((value, key) => res.setHeader(key, value));
+  res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
 }
 
 function findWebDist(): string | undefined {

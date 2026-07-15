@@ -1,11 +1,23 @@
 import { FastMCP } from 'fastmcp';
-import { buildMcpContext } from '../mcpContext.js';
+import type { BirdieAuthRuntime } from '../auth.js';
+import type { AppContext } from '../context.js';
+import type { HostedConfig } from '../runtimeConfig.js';
+import { createMcpAuthenticator, type McpSession } from './principal.js';
 import { registerPrompts } from './prompts.js';
-import { registerTools, type McpContextFactory } from './tools.js';
+import { registerTools } from './tools.js';
 
-export function createMcpServer(ctxFactory: McpContextFactory = buildMcpContext): FastMCP {
-  const server = new FastMCP({ name: 'birdie', version: '0.1.0' });
-  registerTools(server, ctxFactory);
-  registerPrompts(server, ctxFactory);
+export function createRemoteMcpServer(
+  ctx: AppContext,
+  authRuntime: BirdieAuthRuntime,
+  config: HostedConfig
+): FastMCP<McpSession> {
+  const server = new FastMCP<McpSession>({
+    name: 'birdie',
+    version: '0.1.0',
+    authenticate: createMcpAuthenticator(authRuntime, config),
+    health: { enabled: false },
+  });
+  registerTools(server, ctx, config.baseUrl);
+  registerPrompts(server, ctx);
   return server;
 }

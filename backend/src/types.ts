@@ -72,22 +72,3 @@ export interface LessonFilters {
   q?: string;
   limit?: number;
 }
-
-export interface TraceServiceLike {
-  capture(input: NewTrace): Trace | Promise<Trace>;
-  get(id: string): Trace | undefined | Promise<Trace | undefined>;
-  list(status?: TraceStatus): Trace[] | Promise<Trace[]>;
-  skip(id: string, reason: string): Trace | Promise<Trace>;
-  extract(input: NewExtraction): LessonWithTrace | Promise<LessonWithTrace>;
-}
-
-export interface LessonServiceLike {
-  list(filters: LessonFilters): LessonWithTrace[] | Promise<LessonWithTrace[]>;
-  get(id: string): LessonWithTrace | undefined | Promise<LessonWithTrace | undefined>;
-  review(id: string, changes: LessonEdit): LessonWithTrace | Promise<LessonWithTrace>;
-  promote(id: string, payload: PromotePayload): LessonWithTrace | Promise<LessonWithTrace>;
-}
-
-export type BirdieConfig =
-  | { mode: 'local'; user_name?: string }
-  | { mode: 'remote'; server_url: string; user_name?: string };

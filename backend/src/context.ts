@@ -1,6 +1,7 @@
 import { openDb } from './db.js';
 import { loadDomainProfile, type DomainProfile } from './domain.js';
-import { domainProfilePath, localDbPath, saveDomainProfileAt } from './config.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { LessonRepository } from './repositories/lessonRepository.js';
 import { TraceRepository } from './repositories/traceRepository.js';
 import { LessonService } from './services/lessonService.js';
@@ -13,11 +14,7 @@ export interface AppContext {
   updateDomainProfile(content: string): { path: string; profile: DomainProfile };
 }
 
-export function buildContext(): AppContext {
-  return buildLocalContext(process.env.DB_PATH ?? localDbPath(), process.env.DOMAIN_PROFILE_PATH ?? domainProfilePath());
-}
-
-export function buildLocalContext(dbPath: string, domainPath: string): AppContext {
+export function buildHostedContext(dbPath: string, domainPath: string): AppContext {
   const db = openDb(dbPath);
   const traceRepo = new TraceRepository(db);
   const lessonRepo = new LessonRepository(db);
@@ -31,9 +28,11 @@ export function buildLocalContext(dbPath: string, domainPath: string): AppContex
       return domainProfile;
     },
     updateDomainProfile(content) {
-      const result = saveDomainProfileAt(domainPath, content);
+      if (!content.trim()) throw new Error('Domain profile cannot be empty.');
+      mkdirSync(dirname(domainPath), { recursive: true });
+      writeFileSync(domainPath, content.endsWith('\n') ? content : `${content}\n`);
       domainProfile = loadDomainProfile(domainPath);
-      return { ...result, profile: domainProfile };
+      return { path: domainPath, profile: domainProfile };
     },
   };
 }
