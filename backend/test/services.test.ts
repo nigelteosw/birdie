@@ -135,4 +135,47 @@ describe('services', () => {
     await expect(lessonService.delete(lesson.id)).rejects.toThrow(/cannot be deleted/);
     expect(await lessonService.get(lesson.id)).toBeDefined();
   });
+
+  it('shortlists only promoted guidance from bounded task context', async () => {
+    const promotedTrace = await traceService.capture({
+      submitted_by: 'Alex',
+      before_text: 'Send the update soon.',
+      after_text: 'Send the update by Friday.',
+    });
+    const promotedDraft = await traceService.extract({
+      trace_id: promotedTrace.id,
+      quote: 'soon',
+      what_changed: 'Use a concrete deadline.',
+      why_it_matters: 'Concrete deadlines make client follow-up clear.',
+    });
+    const promoted = await lessonService.promote(promotedDraft.id, { reviewer: 'Morgan' });
+
+    const pendingTrace = await traceService.capture({
+      submitted_by: 'Sam',
+      before_text: 'Add a greeting.',
+      after_text: 'Hello Morgan,',
+    });
+    const pending = await traceService.extract({
+      trace_id: pendingTrace.id,
+      quote: 'Add a greeting.',
+      what_changed: 'Address the recipient by name.',
+      why_it_matters: 'A named greeting makes the message personal.',
+    });
+
+    const result = await lessonService.checkGuidance({
+      task: 'Draft a client update with a firm delivery date',
+      artifact_type: 'email',
+      stage: 'before final response',
+    });
+
+    expect(result.outcome).toBe('available');
+    expect(result.candidates.map((lesson) => lesson.id)).toContain(promoted.id);
+    expect(result.candidates.map((lesson) => lesson.id)).not.toContain(pending.id);
+    expect(result.candidates.length).toBeLessThanOrEqual(5);
+  });
+
+  it('returns none when no promoted guidance matches', async () => {
+    const result = await lessonService.checkGuidance({ task: 'Tune a bicycle brake' });
+    expect(result).toEqual({ outcome: 'none', candidates: [] });
+  });
 });

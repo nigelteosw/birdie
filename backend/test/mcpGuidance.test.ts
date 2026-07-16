@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { AppContext } from '../src/context.js';
-import { buildExtractLessonPrompt } from '../src/mcp/prompts.js';
+import { buildCheckGuidancePrompt, buildExtractLessonPrompt } from '../src/mcp/prompts.js';
 import { registerTools } from '../src/mcp/tools.js';
 
 interface RegisteredTool {
@@ -68,5 +68,19 @@ describe('MCP lesson guidance', () => {
     expect(captureTrace).toContain('subjective');
     expect(captureTrace).toContain('one-off');
     expect(captureTrace).toContain('unsafe-to-store');
+  });
+
+  it('treats contextual retrieval as a shortlist rather than permission to interrupt', () => {
+    const descriptions = toolDescriptions();
+    const prompt = buildCheckGuidancePrompt({
+      task: 'Prepare a final project update',
+      stage: 'before sending',
+    });
+
+    expect(descriptions.get('check_guidance')).toContain('search similarity alone');
+    expect(descriptions.get('check_guidance')).toContain('one sentence explaining why');
+    expect(prompt).toContain('same kind of decision');
+    expect(prompt).toContain('remain silent');
+    expect(prompt).toContain('one sentence');
   });
 });

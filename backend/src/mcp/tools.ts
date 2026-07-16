@@ -51,6 +51,13 @@ const askLessonParams = z.object({
     .refine((question) => /[\p{L}\p{N}]/u.test(question), 'Ask a question containing at least one letter or number.'),
   person: z.string().min(1).optional(),
 });
+const checkGuidanceParams = z.object({
+  task: z.string().trim().min(2).max(2000),
+  artifact_type: z.string().trim().min(1).max(200).optional(),
+  stage: z.string().trim().min(1).max(200).optional(),
+  workspace: z.string().trim().min(1).max(500).optional(),
+  relevant_excerpt: z.string().trim().min(1).max(4000).optional(),
+});
 
 export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, baseUrl: string): void {
   server.addTool({
@@ -177,6 +184,13 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
       q: args.question,
       limit: 12,
     })),
+  });
+  server.addTool({
+    name: 'check_guidance',
+    description: 'Shortlist promoted lessons for bounded current-work context; search similarity alone never justifies an interruption. Show at most two lessons only for the same decision or mistake, and include one sentence explaining why each applies. Otherwise remain silent.',
+    parameters: checkGuidanceParams,
+    canAccess: hasScope('birdie:read'),
+    execute: async (args) => json(await ctx.lessonService.checkGuidance(args)),
   });
 }
 

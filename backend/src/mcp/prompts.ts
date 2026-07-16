@@ -1,6 +1,7 @@
 import type { FastMCP } from 'fastmcp';
 import type { AppContext } from '../context.js';
 import type { DomainProfile } from '../domain.js';
+import type { GuidanceContext } from '../types.js';
 import type { McpSession } from './principal.js';
 
 export function registerPrompts(server: FastMCP<McpSession>, ctx: AppContext): void {
@@ -18,6 +19,24 @@ export function registerPrompts(server: FastMCP<McpSession>, ctx: AppContext): v
       { name: 'person', description: 'Only consider lessons submitted by this person', required: false },
     ],
     load: async (args) => buildAskLessonPrompt(args.question!, args.person),
+  });
+  server.addPrompt({
+    name: 'check-guidance',
+    description: 'Check whether promoted guidance directly applies to current work.',
+    arguments: [
+      { name: 'task', description: 'The current task or intent', required: true },
+      { name: 'artifact_type', description: 'The kind of work product', required: false },
+      { name: 'stage', description: 'The current work stage', required: false },
+      { name: 'workspace', description: 'The relevant project or workspace', required: false },
+      { name: 'relevant_excerpt', description: 'Only the excerpt needed for matching', required: false },
+    ],
+    load: async (args) => buildCheckGuidancePrompt({
+      task: args.task!,
+      artifact_type: args.artifact_type,
+      stage: args.stage,
+      workspace: args.workspace,
+      relevant_excerpt: args.relevant_excerpt,
+    }),
   });
 }
 
@@ -45,4 +64,17 @@ Steps:
 1. Call ask_lesson with question="${question}"${person ? ` and person="${person}"` : ''}.
 2. Synthesize an answer strictly from the returned lesson cards.
 3. If nothing relevant comes back, say so plainly instead of inventing an answer.`;
+}
+
+export function buildCheckGuidancePrompt(context: GuidanceContext): string {
+  return `Check Birdie's promoted guidance against this bounded current-work context:
+
+${JSON.stringify(context, null, 2)}
+
+Steps:
+1. Call check_guidance with this context.
+2. Treat search similarity only as a shortlist, never as permission to interrupt.
+3. Show a lesson only when it addresses the same kind of decision or mistake, is actionable at the current stage, and no supplied context makes it inapplicable.
+4. If showing guidance, return at most two three-part lessons and one sentence explaining why each applies now.
+5. If no candidate passes every check, remain silent and continue the user's primary work.`;
 }

@@ -13,10 +13,12 @@ describe('birdie-mentor skill contract', () => {
     expect(skill).toContain('Skip typo-only, formatting-only, purely subjective, one-off');
   });
 
-  it('captures and extracts a verified pending lesson in the same turn', () => {
+  it('captures a verified three-part pending lesson in the same turn', () => {
     expect(skill).toContain('same turn');
-    expect(skill).toContain('capture_trace');
-    expect(skill).toContain('save_extraction');
+    expect(skill).toContain('capture_correction');
+    expect(skill).toContain('What was initially wrong');
+    expect(skill).toContain('What to do instead');
+    expect(skill).toContain('Why it matters');
     expect(skill).toContain('smallest exact contiguous excerpt from before_text');
     expect(skill).toContain('quote_verified');
     expect(skill).toContain('review_lesson');
@@ -28,5 +30,12 @@ describe('birdie-mentor skill contract', () => {
     expect(skill).toContain('Never call `promote_lesson` without explicit user approval');
     expect(skill).toContain('Call `open_review_queue` only when the user asks');
     expect(skill).toContain('If capture fails, report it and stop');
+  });
+
+  it('checks for guidance at deliberate moments without noisy interruptions', () => {
+    expect(skill).toContain('At task start');
+    expect(skill).toContain('Before a consequential final action');
+    expect(skill).toContain('search similarity is only a shortlist');
+    expect(skill).toContain('remain silent');
   });
 });

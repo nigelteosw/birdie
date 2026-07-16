@@ -1,6 +1,13 @@
 import { verifyQuote } from '../extraction.js';
 import type { DBAdapter, DBSession } from '../adapters/types.js';
-import type { LessonEdit, LessonFilters, LessonWithTrace, PromotePayload } from '../types.js';
+import type {
+  GuidanceCheckResult,
+  GuidanceContext,
+  LessonEdit,
+  LessonFilters,
+  LessonWithTrace,
+  PromotePayload,
+} from '../types.js';
 
 export class LessonService {
   constructor(private readonly db: DBAdapter) {}
@@ -11,6 +18,24 @@ export class LessonService {
 
   get(id: string): Promise<LessonWithTrace | undefined> {
     return this.db.lessons.getById(id);
+  }
+
+  async checkGuidance(context: GuidanceContext): Promise<GuidanceCheckResult> {
+    const query = [
+      context.task,
+      context.artifact_type,
+      context.stage,
+      context.workspace,
+      context.relevant_excerpt,
+    ]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .join(' ');
+    const candidates = await this.db.lessons.list({
+      status: 'promoted',
+      q: query,
+      limit: 5,
+    });
+    return { outcome: candidates.length > 0 ? 'available' : 'none', candidates };
   }
 
   async review(id: string, changes: LessonEdit): Promise<LessonWithTrace> {

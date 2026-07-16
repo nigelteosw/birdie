@@ -20,6 +20,13 @@ const promoteBody = z.object({
   what_changed: z.string().min(1).optional(),
   why_it_matters: z.string().min(1).optional(),
 });
+const guidanceContextBody = z.object({
+  task: z.string().trim().min(2).max(2000),
+  artifact_type: z.string().trim().min(1).max(200).optional(),
+  stage: z.string().trim().min(1).max(200).optional(),
+  workspace: z.string().trim().min(1).max(500).optional(),
+  relevant_excerpt: z.string().trim().min(1).max(4000).optional(),
+});
 
 export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
@@ -36,6 +43,16 @@ export function lessonsRouter(ctx: AppContext): Router {
         submitted_by_user_id: parsed.data.mine ? req.user!.id : undefined,
         })
       );
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.post('/check-guidance', requireScope('birdie:read'), async (req, res) => {
+    const parsed = guidanceContextBody.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    try {
+      res.json(await ctx.lessonService.checkGuidance(parsed.data));
     } catch (err) {
       sendServiceError(res, err);
     }

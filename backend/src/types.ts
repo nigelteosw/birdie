@@ -78,3 +78,16 @@ export interface LessonFilters {
   q?: string;
   limit?: number;
 }
+
+export interface GuidanceContext {
+  task: string;
+  artifact_type?: string;
+  stage?: string;
+  workspace?: string;
+  relevant_excerpt?: string;
+}
+
+export interface GuidanceCheckResult {
+  outcome: 'available' | 'none';
+  candidates: LessonWithTrace[];
+}
