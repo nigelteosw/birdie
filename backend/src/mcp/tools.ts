@@ -12,6 +12,11 @@ const captureTraceParams = z.object({
   after_text: z.string().min(1),
   context_note: z.string().optional(),
 });
+const captureCorrectionParams = captureTraceParams.extend({
+  quote: z.string().min(1),
+  what_changed: z.string().min(1),
+  why_it_matters: z.string().min(1),
+});
 const getTraceParams = z.object({ trace_id: z.string().min(1) });
 const skipExtractionParams = z.object({ trace_id: z.string().min(1), reason: z.string().min(1) });
 const saveExtractionParams = z.object({
@@ -77,6 +82,20 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     execute: async (args, request) => {
       const user = requireSession(request.session).user;
       return json(await ctx.traceService.capture({
+        ...args,
+        submitted_by: user.name,
+        submitted_by_user_id: user.id,
+      }));
+    },
+  });
+  server.addTool({
+    name: 'capture_correction',
+    description: 'Capture grounded before_text and after_text plus the three-part lesson in the same turn. Copy quote from before_text, use what_changed for what to do instead, and use why_it_matters for the transferable significance. The result stays pending_review.',
+    parameters: captureCorrectionParams,
+    canAccess: hasScope('birdie:write'),
+    execute: async (args, request) => {
+      const user = requireSession(request.session).user;
+      return json(await ctx.traceService.captureCorrection({
         ...args,
         submitted_by: user.name,
         submitted_by_user_id: user.id,

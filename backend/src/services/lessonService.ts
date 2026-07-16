@@ -28,11 +28,15 @@ export class LessonService {
   async promote(id: string, payload: PromotePayload): Promise<LessonWithTrace> {
     return this.db.transaction(async (session) => {
       const current = await this.requireLesson(session, id);
+      const quoteVerified = payload.quote === undefined
+        ? current.quote_verified
+        : await this.verifyLessonQuote(session, current.trace_id, payload.quote);
+      if (!quoteVerified) {
+        throw new Error('A verified quote from the original work is required before promotion');
+      }
       return session.lessons.promote(id, {
         ...payload,
-        quote_verified: payload.quote === undefined
-          ? current.quote_verified
-          : await this.verifyLessonQuote(session, current.trace_id, payload.quote),
+        quote_verified: true,
       });
     });
   }

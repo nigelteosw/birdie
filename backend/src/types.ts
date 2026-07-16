@@ -23,6 +23,12 @@ export interface NewTrace {
   source?: string;
 }
 
+export interface NewCorrection extends NewTrace {
+  quote: string;
+  what_changed: string;
+  why_it_matters: string;
+}
+
 export interface Lesson {
   id: string;
   trace_id: string;

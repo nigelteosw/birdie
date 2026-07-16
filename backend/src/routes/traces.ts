@@ -8,6 +8,11 @@ const createTraceBody = z.object({
   after_text: z.string().min(1),
   context_note: z.string().optional(),
 });
+const captureCorrectionBody = createTraceBody.extend({
+  quote: z.string().min(1),
+  what_changed: z.string().min(1),
+  why_it_matters: z.string().min(1),
+});
 
 const statusQuery = z.enum(['captured', 'extracted', 'skipped']).optional();
 const skipBody = z.object({ reason: z.string().min(1) });
@@ -29,6 +34,22 @@ export function tracesRouter(ctx: AppContext): Router {
         ...parsed.data,
         submitted_by: req.user!.name,
         submitted_by_user_id: req.user!.id,
+        })
+      );
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.post('/capture-correction', requireScope('birdie:write'), async (req, res) => {
+    const parsed = captureCorrectionBody.safeParse(req.body);
+    if (!parsed.success) return sendZodError(res, parsed.error);
+    try {
+      res.status(201).json(
+        await ctx.traceService.captureCorrection({
+          ...parsed.data,
+          submitted_by: req.user!.name,
+          submitted_by_user_id: req.user!.id,
         })
       );
     } catch (err) {

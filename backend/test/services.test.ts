@@ -37,7 +37,23 @@ describe('services', () => {
     ).rejects.toThrow(/already/);
   });
 
-  it('rechecks quote verification on edit and promotion', async () => {
+  it('captures correction evidence and its pending three-part lesson atomically', async () => {
+    const lesson = await traceService.captureCorrection({
+      submitted_by: 'Alex',
+      submitted_by_user_id: null,
+      before_text: 'Send the update when you can.',
+      after_text: 'Send the update by Friday at 3pm.',
+      quote: 'when you can',
+      what_changed: 'Give the recipient a concrete deadline.',
+      why_it_matters: 'A concrete deadline makes ownership and follow-up unambiguous.',
+    });
+
+    expect(lesson.status).toBe('pending_review');
+    expect(lesson.quote_verified).toBe(true);
+    expect((await traceService.get(lesson.trace_id))?.status).toBe('extracted');
+  });
+
+  it('rechecks quote verification on edit and blocks ungrounded promotion', async () => {
     const trace = await traceService.capture({
       submitted_by: 'Jane',
       before_text: 'uncapped indemnity',
@@ -52,8 +68,12 @@ describe('services', () => {
     expect(lesson.quote_verified).toBe(false);
     const edited = await lessonService.review(lesson.id, { quote: 'uncapped indemnity' });
     expect(edited.quote_verified).toBe(true);
-    const promoted = await lessonService.promote(lesson.id, { reviewer: 'Sarah', quote: 'not present' });
-    expect(promoted.quote_verified).toBe(false);
+    await expect(
+      lessonService.promote(lesson.id, { reviewer: 'Sarah', quote: 'not present' })
+    ).rejects.toThrow('verified quote');
+    expect((await lessonService.get(lesson.id))?.status).toBe('pending_review');
+    const promoted = await lessonService.promote(lesson.id, { reviewer: 'Sarah' });
+    expect(promoted.quote_verified).toBe(true);
     expect(promoted.status).toBe('promoted');
   });
 

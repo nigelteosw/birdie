@@ -1,12 +1,28 @@
 import { verifyQuote } from '../extraction.js';
 import type { DBAdapter, TraceStore } from '../adapters/types.js';
-import type { LessonWithTrace, NewExtraction, NewTrace, Trace, TraceStatus } from '../types.js';
+import type { LessonWithTrace, NewCorrection, NewExtraction, NewTrace, Trace, TraceStatus } from '../types.js';
 
 export class TraceService {
   constructor(private readonly db: DBAdapter) {}
 
   capture(input: NewTrace): Promise<Trace> {
     return this.db.traces.create(input);
+  }
+
+  captureCorrection(input: NewCorrection): Promise<LessonWithTrace> {
+    return this.db.transaction(async (session) => {
+      const { quote, what_changed, why_it_matters, ...traceInput } = input;
+      const trace = await session.traces.create(traceInput);
+      const lesson = await session.lessons.create({
+        trace_id: trace.id,
+        quote,
+        what_changed,
+        why_it_matters,
+        quote_verified: verifyQuote(quote, trace.before_text),
+      });
+      await session.traces.markExtracted(trace.id);
+      return lesson;
+    });
   }
 
   get(id: string): Promise<Trace | undefined> {

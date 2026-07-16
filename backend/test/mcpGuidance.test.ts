@@ -44,6 +44,9 @@ describe('MCP lesson guidance', () => {
   it('describes the same lifecycle on raw MCP tools', () => {
     const descriptions = toolDescriptions();
 
+    expect(descriptions.get('capture_correction')).toContain('three-part');
+    expect(descriptions.get('capture_correction')).toContain('same turn');
+    expect(descriptions.get('capture_correction')).toContain('before_text');
     expect(descriptions.get('capture_trace')).toContain('clearly reusable');
     expect(descriptions.get('capture_trace')).toContain('verbatim');
     expect(descriptions.get('capture_trace')).toContain('same turn');
