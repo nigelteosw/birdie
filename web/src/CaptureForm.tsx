@@ -51,7 +51,7 @@ export default function CaptureForm({ onCaptured }: Props) {
       </div>
       {status && <p className="form-error">{status}</p>}
       <div className="capture-form__footer">
-        <p>Your example stays in the review queue until a lesson is promoted.</p>
+        <p>Save the before and corrected work as source evidence. A connected Birdie agent can turn it into a pending lesson.</p>
         <Button type="submit" disabled={isSaving}>
           {isSaving ? <LoaderCircle className="spin" size={17} /> : <CheckCircle2 size={17} />}
           {isSaving ? 'Saving example' : 'Save example'}

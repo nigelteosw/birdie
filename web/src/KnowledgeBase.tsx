@@ -35,7 +35,7 @@ export default function KnowledgeBase() {
         <CardHeader>
           <div>
             <CardTitle>Search the knowledge base</CardTitle>
-            <CardDescription>Look across the quote, the change, and why it matters.</CardDescription>
+            <CardDescription>Look across what was initially wrong, what to do instead, and why it matters.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>

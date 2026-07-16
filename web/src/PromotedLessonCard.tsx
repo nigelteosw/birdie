@@ -24,9 +24,12 @@ export default function PromotedLessonCard({ lesson, onDelete }: Props) {
           <Badge variant="success"><CheckCircle2 size={13} /> Promoted</Badge>
         </CardHeader>
         <CardContent>
-          <blockquote className="library-card__quote">{lesson.quote}</blockquote>
+          <div className="library-card__quote-block">
+            <span>What was initially wrong</span>
+            <blockquote className="library-card__quote">{lesson.quote}</blockquote>
+          </div>
           <div className="library-card__body">
-            <div><span>What changed</span><p>{lesson.what_changed}</p></div>
+            <div><span>What to do instead</span><p>{lesson.what_changed}</p></div>
             <div><span>Why it matters</span><p>{lesson.why_it_matters}</p></div>
           </div>
         </CardContent>

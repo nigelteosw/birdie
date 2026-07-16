@@ -1,6 +1,13 @@
 import { Check, ChevronRight, FileEdit, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { listLessons, promoteLesson, reviewLesson, type Lesson } from './api.js';
+import {
+  findSimilarLessons,
+  listLessons,
+  mergeLesson,
+  promoteLesson,
+  reviewLesson,
+  type Lesson,
+} from './api.js';
 import { Badge } from './components/ui/badge.js';
 import { Button } from './components/ui/button.js';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card.js';
@@ -53,6 +60,14 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
     await act(lesson.id, async () => {
       await reviewLesson(lesson.id, { reject: true });
       setMessage('Lesson rejected and removed from the queue.');
+    });
+  }
+
+  async function handleMerge(source: Lesson, target: Lesson) {
+    await act(source.id, async () => {
+      await mergeLesson(source.id, target.id);
+      setEditingId(null);
+      setMessage('Correction evidence merged. The selected lesson wording was kept.');
     });
   }
 
@@ -131,16 +146,21 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
 
                   {editing ? (
                     <div className="lesson-editor">
-                      <EditableField label="Quote"><Textarea value={lesson.quote} rows={2} onChange={(event) => updateField(lesson.id, 'quote', event.target.value)} /></EditableField>
-                      <EditableField label="What changed"><Textarea value={lesson.what_changed} rows={2} onChange={(event) => updateField(lesson.id, 'what_changed', event.target.value)} /></EditableField>
+                      <EditableField label="What was initially wrong"><Textarea value={lesson.quote} rows={2} onChange={(event) => updateField(lesson.id, 'quote', event.target.value)} /></EditableField>
+                      <EditableField label="What to do instead"><Textarea value={lesson.what_changed} rows={2} onChange={(event) => updateField(lesson.id, 'what_changed', event.target.value)} /></EditableField>
                       <EditableField label="Why it matters"><Textarea value={lesson.why_it_matters} rows={3} onChange={(event) => updateField(lesson.id, 'why_it_matters', event.target.value)} /></EditableField>
+                      <SimilarLessons
+                        lessonId={lesson.id}
+                        working={working}
+                        onMerge={(target) => handleMerge(lesson, target)}
+                      />
                     </div>
                   ) : (
                     <LessonPreview lesson={lesson} />
                   )}
                 </CardContent>
                 <CardFooter className="review-card__footer">
-                  <p className="privacy-note">Remove client or matter details before sharing.</p>
+                  <p className="privacy-note">Remove private names, project details, and secrets before sharing.</p>
                   <div className="card-actions">
                     {editing && <Button type="button" variant="outline" size="sm" disabled={working} onClick={() => handleSaveDraft(lesson)}>Save draft</Button>}
                     <Button type="button" size="sm" disabled={working} onClick={() => handlePromote(lesson)}><Check size={16} /> Promote</Button>
@@ -159,9 +179,12 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
 function LessonPreview({ lesson }: { lesson: Lesson }) {
   return (
     <div className="lesson-preview">
-      <blockquote>{lesson.quote}</blockquote>
+      <div className="lesson-preview__detail lesson-preview__quote">
+        <span>What was initially wrong</span>
+        <blockquote>{lesson.quote}</blockquote>
+      </div>
       <div className="lesson-preview__detail">
-        <span>What changed</span>
+        <span>What to do instead</span>
         <p>{lesson.what_changed}</p>
       </div>
       <div className="lesson-preview__detail">
@@ -169,6 +192,49 @@ function LessonPreview({ lesson }: { lesson: Lesson }) {
         <p>{lesson.why_it_matters}</p>
       </div>
     </div>
+  );
+}
+
+function SimilarLessons({
+  lessonId,
+  working,
+  onMerge,
+}: {
+  lessonId: string;
+  working: boolean;
+  onMerge: (target: Lesson) => void;
+}) {
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+
+  useEffect(() => {
+    findSimilarLessons(lessonId).then(setLessons).catch(() => setLessons([]));
+  }, [lessonId]);
+
+  if (lessons.length === 0) return null;
+  return (
+    <aside className="similar-lessons" aria-label="Similar guidance">
+      <div className="similar-lessons__heading">
+        <span>Possible duplicate or conflict</span>
+        <p>Compare the underlying guidance before promoting another lesson.</p>
+      </div>
+      {lessons.map((lesson) => (
+        <div className="similar-lesson" key={lesson.id}>
+          <div>
+            <strong>{lesson.what_changed}</strong>
+            <p>{lesson.why_it_matters}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={working}
+            onClick={() => onMerge(lesson)}
+          >
+            Merge into this lesson
+          </Button>
+        </div>
+      ))}
+    </aside>
   );
 }
 

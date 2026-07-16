@@ -75,9 +75,17 @@ h1 { margin-bottom: 0; color: #10252a; font-family: Manrope, sans-serif; font-si
 .lesson-preview { display: grid; gap: 17px; }
 .lesson-preview blockquote, .library-card__quote { position: relative; margin: 0; border-left: 3px solid #b9ddd4; color: #21353a; font-family: Manrope, sans-serif; font-size: 15px; font-weight: 600; letter-spacing: -.012em; line-height: 1.65; padding: 2px 0 2px 16px; }
 .lesson-preview__detail, .library-card__body > div { display: grid; gap: 5px; }
-.lesson-preview__detail span, .library-card__body span { color: #6a797e; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.lesson-preview__detail span, .library-card__body span, .library-card__quote-block > span { color: #6a797e; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .lesson-preview__detail p, .library-card__body p { margin: 0; color: #405358; font-size: 13px; line-height: 1.55; }
 .lesson-editor { display: grid; gap: 14px; }
+.lesson-preview__quote, .library-card__quote-block { display: grid; gap: 8px; }
+.similar-lessons { display: grid; gap: 0; margin-top: 4px; border: 1px solid #d7e2e1; background: #f8fbfa; }
+.similar-lessons__heading { padding: 13px 14px; border-bottom: 1px solid #dfe8e7; }
+.similar-lessons__heading span { color: #29484b; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.similar-lessons__heading p, .similar-lesson p { margin: 4px 0 0; color: #68797d; font-size: 12px; line-height: 1.45; }
+.similar-lesson { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 13px 14px; border-bottom: 1px solid #e3eae9; }
+.similar-lesson:last-child { border-bottom: 0; }
+.similar-lesson strong { color: #294146; font-size: 13px; }
 .review-card__footer { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; }
 .reviewer-field { display: grid; gap: 6px; }
 .reviewer-field label { color: #64757a; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }

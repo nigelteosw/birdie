@@ -24,6 +24,7 @@ export interface Lesson {
   reviewer_user_id: string | null;
   reviewed_at: string | null;
   promoted_at: string | null;
+  merged_into_lesson_id: string | null;
   created_at: string;
 }
 
@@ -66,6 +67,14 @@ export function promoteLesson(
 
 export function deleteLesson(id: string): Promise<void> {
   return del(`/lessons/${id}`);
+}
+
+export function findSimilarLessons(id: string): Promise<Lesson[]> {
+  return get(`/lessons/${id}/similar`);
+}
+
+export function mergeLesson(id: string, targetLessonId: string): Promise<Lesson> {
+  return post(`/lessons/${id}/merge`, { target_lesson_id: targetLessonId });
 }
 
 async function get<T>(url: string): Promise<T> {
