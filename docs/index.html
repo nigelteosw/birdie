@@ -1,78 +1,202 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Birdie turns reviewed before/after edits into authenticated, shared team guidance." />
     <title>Birdie Docs</title>
     <link rel="icon" href="assets/birdie-mascot.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
     <link rel="stylesheet" href="styles.css" />
+    <script>
+      (function () {
+        document.documentElement.classList.add("js");
+        try {
+          var stored = localStorage.getItem("birdie-theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.setAttribute("data-theme", stored);
+          } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Birdie home"><img src="assets/birdie-mascot.png" alt="" /><span>Birdie</span></a>
-      <nav aria-label="Primary navigation"><a href="#deploy">Deploy</a><a href="#connect">Connect</a><a href="#workflow">Workflow</a><a href="#reference">Reference</a></nav>
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="topbar">
+      <div class="topbar-start">
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="sidenav" data-nav-toggle aria-label="Toggle navigation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <a class="brand" href="#top"><img src="assets/birdie-mascot.png" alt="" width="24" height="24" /><span>Birdie</span></a>
+      </div>
+      <div class="topbar-search">
+        <button class="filter-trigger" type="button" data-filter-trigger aria-label="Search or filter documentation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span>Search docs</span>
+          <kbd>/</kbd>
+        </button>
+      </div>
+      <div class="topbar-end">
+        <a class="icon-link" href="https://github.com/nigelteosw/birdie" aria-label="Birdie on GitHub">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.5 0 12.3c0 5.44 3.44 10.05 8.21 11.68.6.11.82-.27.82-.6 0-.29-.01-1.24-.02-2.25-3.34.75-4.04-1.45-4.04-1.45-.55-1.44-1.34-1.82-1.34-1.82-1.09-.77.08-.75.08-.75 1.21.09 1.85 1.28 1.85 1.28 1.07 1.87 2.81 1.33 3.5 1.02.11-.79.42-1.33.76-1.64-2.67-.31-5.47-1.38-5.47-6.15 0-1.36.47-2.47 1.24-3.34-.12-.31-.54-1.57.12-3.28 0 0 1.01-.33 3.3 1.28.96-.27 1.98-.41 3-.41s2.04.14 3 .41c2.29-1.61 3.3-1.28 3.3-1.28.66 1.71.24 2.97.12 3.28.77.87 1.24 1.98 1.24 3.34 0 4.78-2.81 5.83-5.49 6.14.43.38.81 1.13.81 2.29 0 1.65-.02 2.98-.02 3.39 0 .33.22.72.83.6C20.57 22.34 24 17.74 24 12.3 24 5.5 18.63 0 12 0z"></path></svg>
+        </a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle color theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
+      </div>
     </header>
-    <main id="top">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Shared mentorship knowledge</p>
-          <h1>Turn real edits into trusted team guidance.</h1>
-          <p class="lede">Birdie combines a signed-in review workspace with an OAuth-authenticated remote MCP server. Every capture and promotion is tied to the same user account.</p>
-          <div class="hero-actions"><a class="button primary" href="#deploy">Deploy Birdie</a><a class="button secondary" href="#connect">Connect MCP</a></div>
-        </div>
-        <div class="hero-visual" aria-hidden="true"><img src="assets/birdie-mascot.png" alt="" /></div>
-      </section>
 
-      <section class="band summary-band" aria-labelledby="what-birdie-does">
-        <div class="section-heading"><p class="eyebrow">One hosted loop</p><h2 id="what-birdie-does">Capture, review, and retrieve from one shared service.</h2></div>
-        <div class="summary-grid">
-          <article><span class="number">01</span><h3>Authenticate once</h3><p>Use email/password in the web UI and OAuth Authorization Code + PKCE from MCP clients.</p></article>
-          <article><span class="number">02</span><h3>Review deliberately</h3><p>Validate quotes, edit candidate lessons, and promote only guidance the team trusts.</p></article>
-          <article><span class="number">03</span><h3>Reuse experience</h3><p>Search promoted examples from chat or browse them in the signed-in knowledge base.</p></article>
+    <div class="docs-shell">
+      <nav class="sidenav" id="sidenav" aria-label="Documentation">
+        <div class="sidenav-inner">
+          <input class="nav-filter" type="search" placeholder="Filter navigation" aria-label="Filter navigation links" data-nav-filter />
+          <div class="nav-group">
+            <p class="nav-group-title">Get started</p>
+            <ul>
+              <li><a href="#top" data-nav-link>Introduction</a></li>
+              <li><a href="#deploy" data-nav-link>Deploy</a></li>
+              <li><a href="#connect" data-nav-link>Connect MCP</a></li>
+            </ul>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-title">Guides</p>
+            <ul>
+              <li><a href="#workflow" data-nav-link>Workflow</a></li>
+            </ul>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-title">Reference</p>
+            <ul>
+              <li><a href="#reference" data-nav-link>Hosted surfaces</a></li>
+              <li><a href="#development" data-nav-link>Development</a></li>
+            </ul>
+          </div>
         </div>
-      </section>
+      </nav>
+      <div class="sidenav-scrim" data-nav-scrim hidden></div>
 
-      <section id="deploy" class="content-section">
-        <div class="section-heading"><p class="eyebrow">Deploy</p><h2>Run one persistent Birdie service.</h2></div>
-        <div class="split">
-          <div><p>Build the Docker image on a host with a persistent volume mounted at <code>/data</code>. Set a public HTTPS origin, an auth secret, and bootstrap admin credentials.</p><pre><code>BETTER_AUTH_SECRET=at-least-32-characters
+      <main>
+        <article id="content">
+          <div id="top">
+            <p class="eyebrow">Get started</p>
+            <h1>Introduction to Birdie</h1>
+            <p class="lede">Birdie combines a signed-in review workspace with an OAuth-authenticated remote MCP server. Every capture and promotion is tied to the same user account.</p>
+            <button class="copy-page" type="button" data-copy-page>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy page
+            </button>
+            <div class="banner"><img src="assets/birdie-mascot.png" alt="Birdie mascot" /></div>
+          </div>
+
+          <section aria-labelledby="what-birdie-does">
+            <h2 id="what-birdie-does">How Birdie works</h2>
+            <ol class="steps-list">
+              <li><strong>Authenticate once.</strong> Use email/password in the web UI and OAuth Authorization Code + PKCE from MCP clients.</li>
+              <li><strong>Review deliberately.</strong> Validate quotes, edit candidate lessons, and promote only guidance the team trusts.</li>
+              <li><strong>Reuse experience.</strong> Search promoted examples from chat or browse them in the signed-in knowledge base.</li>
+            </ol>
+          </section>
+
+          <section id="deploy" aria-labelledby="deploy-heading">
+            <p class="eyebrow">Get started</p>
+            <h2 id="deploy-heading">Deploy</h2>
+            <p>Run one persistent Birdie service. Build the Docker image on a host with a persistent volume mounted at <code>/data</code>. Set a public HTTPS origin, an auth secret, and bootstrap admin credentials.</p>
+            <pre><code>BETTER_AUTH_SECRET=at-least-32-characters
 BIRDIE_BASE_URL=https://birdie.example.com
 BIRDIE_ADMIN_EMAIL=admin@example.com
 BIRDIE_ADMIN_PASSWORD=at-least-12-characters
-DB_PATH=/data/birdie.db</code></pre></div>
-          <div class="callout"><h3>First start</h3><p>Birdie creates the configured admin only when that email does not exist. Future restarts do not reset its password. Sign in and create the remaining users from the Users tab.</p></div>
-        </div>
-      </section>
+DB_PATH=/data/birdie.db</code></pre>
+            <div class="callout">
+              <p class="callout-title">First start</p>
+              <p>Birdie creates the configured admin only when that email does not exist. Future restarts do not reset its password. Sign in and create the remaining users from the Users tab.</p>
+            </div>
+          </section>
 
-      <section id="connect" class="content-section alt">
-        <div class="section-heading"><p class="eyebrow">Remote MCP</p><h2>Point clients at the hosted endpoint.</h2></div>
-        <div class="split"><div><pre><code>https://birdie.example.com/mcp</code></pre><p>The client discovers OAuth metadata, opens Birdie's sign-in and consent screens, then receives a token bound to the MCP resource. No local database or stdio bridge is needed.</p></div><div class="callout"><h3>Claude plugin</h3><p>The repository's plugin retains the proactive Birdie skill. It no longer launches a local server; configure the team's remote MCP URL separately.</p></div></div>
-      </section>
+          <section id="connect" aria-labelledby="connect-heading">
+            <p class="eyebrow">Get started</p>
+            <h2 id="connect-heading">Connect MCP</h2>
+            <p>Point clients at the hosted endpoint.</p>
+            <pre><code>https://birdie.example.com/mcp</code></pre>
+            <p>The client discovers OAuth metadata, opens Birdie's sign-in and consent screens, then receives a token bound to the MCP resource. No local database or stdio bridge is needed.</p>
+            <div class="callout">
+              <p class="callout-title">Claude plugin</p>
+              <p>The repository's plugin retains the proactive Birdie skill. It no longer launches a local server; configure the team's remote MCP URL separately.</p>
+            </div>
+          </section>
 
-      <section id="workflow" class="content-section">
-        <div class="section-heading"><p class="eyebrow">Workflow</p><h2>Grounded experience, with a human gate.</h2></div>
-        <div class="workflow">
-          <article><h3>1. Capture</h3><p>The signed-in user records a before/after example in chat or the web UI.</p></article>
-          <article><h3>2. Extract</h3><p>The MCP host proposes a quote, change, and rationale; Birdie verifies the quote.</p></article>
-          <article><h3>3. Review</h3><p>An authenticated reviewer edits, rejects, or promotes the candidate lesson.</p></article>
-          <article><h3>4. Retrieve</h3><p>Assistants search the promoted pool and synthesize only from returned lesson cards.</p></article>
-        </div>
-      </section>
+          <section id="workflow" aria-labelledby="workflow-heading">
+            <p class="eyebrow">Guides</p>
+            <h2 id="workflow-heading">Workflow</h2>
+            <p>Grounded experience, with a human gate.</p>
+            <ol class="workflow-list">
+              <li><h3>Capture</h3><p>The signed-in user records a before/after example in chat or the web UI.</p></li>
+              <li><h3>Extract</h3><p>The MCP host proposes a quote, change, and rationale; Birdie verifies the quote.</p></li>
+              <li><h3>Review</h3><p>An authenticated reviewer edits, rejects, or promotes the candidate lesson.</p></li>
+              <li><h3>Retrieve</h3><p>Assistants search the promoted pool and synthesize only from returned lesson cards.</p></li>
+            </ol>
+          </section>
 
-      <section id="reference" class="content-section alt">
-        <div class="section-heading"><p class="eyebrow">Reference</p><h2>Hosted surfaces.</h2></div>
-        <div class="reference-grid">
-          <article><h3>Public</h3><ul><li><code>GET /__birdie</code></li><li><code>/.well-known/*</code></li><li><code>/api/auth/*</code></li><li>Sign-in and consent pages</li></ul></article>
-          <article><h3>Authenticated</h3><ul><li><code>/traces</code></li><li><code>/lessons</code></li><li><code>/domain</code></li><li><code>/api/admin/users</code></li></ul></article>
-          <article><h3>MCP</h3><ul><li><code>POST /mcp</code></li><li><code>capture_trace</code></li><li><code>save_extraction</code></li><li><code>promote_lesson</code></li><li><code>ask_lesson</code></li></ul></article>
-        </div>
-      </section>
+          <section id="reference" aria-labelledby="reference-heading">
+            <p class="eyebrow">Reference</p>
+            <h2 id="reference-heading">Hosted surfaces</h2>
+            <div class="ref-table-wrap">
+              <table class="ref-table">
+                <thead>
+                  <tr><th scope="col">Surface</th><th scope="col">Endpoints</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">Public</th>
+                    <td><code>GET /__birdie</code> <code>/.well-known/*</code> <code>/api/auth/*</code> Sign-in and consent pages</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Authenticated</th>
+                    <td><code>/traces</code> <code>/lessons</code> <code>/domain</code> <code>/api/admin/users</code></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">MCP</th>
+                    <td><code>POST /mcp</code> <code>capture_trace</code> <code>save_extraction</code> <code>promote_lesson</code> <code>ask_lesson</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      <section class="content-section publish-section"><div class="section-heading"><p class="eyebrow">Development</p><h2>Build and verify.</h2></div><pre><code>bun install --frozen-lockfile
+          <section id="development" aria-labelledby="development-heading">
+            <p class="eyebrow">Reference</p>
+            <h2 id="development-heading">Development</h2>
+            <p>Build and verify.</p>
+            <pre><code>bun install --frozen-lockfile
 bun run build
-bun test</code></pre></section>
-    </main>
-    <footer class="site-footer"><p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p><a href="https://github.com/nigelteosw/birdie">GitHub repository</a></footer>
+bun test</code></pre>
+          </section>
+
+          <footer class="page-footer">
+            <p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p>
+            <a href="https://github.com/nigelteosw/birdie">GitHub repository</a>
+          </footer>
+        </article>
+      </main>
+
+      <nav class="on-this-page" aria-label="On this page">
+        <p class="on-this-page-title">On this page</p>
+        <ul>
+          <li><a href="#what-birdie-does" data-outline-link>How Birdie works</a></li>
+          <li><a href="#deploy-heading" data-outline-link>Deploy</a></li>
+          <li><a href="#connect-heading" data-outline-link>Connect MCP</a></li>
+          <li><a href="#workflow-heading" data-outline-link>Workflow</a></li>
+          <li><a href="#reference-heading" data-outline-link>Hosted surfaces</a></li>
+          <li><a href="#development-heading" data-outline-link>Development</a></li>
+        </ul>
+      </nav>
+    </div>
+
+    <script src="script.js" defer></script>
   </body>
 </html>
