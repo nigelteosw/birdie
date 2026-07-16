@@ -58,6 +58,11 @@ const checkGuidanceParams = z.object({
   workspace: z.string().trim().min(1).max(500).optional(),
   relevant_excerpt: z.string().trim().min(1).max(4000).optional(),
 });
+const findSimilarLessonsParams = z.object({ lesson_id: z.string().min(1) });
+const mergeLessonParams = z.object({
+  lesson_id: z.string().min(1),
+  target_lesson_id: z.string().min(1),
+});
 
 export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, baseUrl: string): void {
   server.addTool({
@@ -191,6 +196,26 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
     parameters: checkGuidanceParams,
     canAccess: hasScope('birdie:read'),
     execute: async (args) => json(await ctx.lessonService.checkGuidance(args)),
+  });
+  server.addTool({
+    name: 'find_similar_lessons',
+    description: 'Find pending or promoted guidance that may be a duplicate or conflict for a lesson under review. Similarity is only a suggestion; do not merge automatically.',
+    parameters: findSimilarLessonsParams,
+    canAccess: hasScope('birdie:read'),
+    execute: async (args) => json(await ctx.lessonService.findSimilar(args.lesson_id, 5)),
+  });
+  server.addTool({
+    name: 'merge_lesson',
+    description: 'Merge a pending correction into an existing lesson only after the user explicitly selects the target. The target lesson\'s three fields remain unchanged and the pending correction remains as supporting evidence.',
+    parameters: mergeLessonParams,
+    canAccess: hasScope('birdie:write'),
+    execute: async (args, request) => {
+      const user = requireSession(request.session).user;
+      return json(await ctx.lessonService.merge(args.lesson_id, args.target_lesson_id, {
+        reviewer: user.name,
+        reviewer_user_id: user.id,
+      }));
+    },
   });
 }
 

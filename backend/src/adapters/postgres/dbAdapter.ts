@@ -15,6 +15,7 @@ import type {
   LessonFilters,
   LessonStatus,
   LessonWithTrace,
+  MergeLessonPayload,
   NewExtraction,
   NewTrace,
   PromotePayload,
@@ -205,6 +206,24 @@ class PostgresLessonStore implements LessonStore {
     return promoted;
   }
 
+  async merge(sourceId: string, targetId: string, payload: MergeLessonPayload): Promise<LessonWithTrace> {
+    const source = await this.require(sourceId);
+    const target = await this.require(targetId);
+    if (sourceId === targetId) throw new Error('A lesson cannot be merged into itself');
+    if (source.status !== 'pending_review') throw new Error('Only pending lessons can be merged');
+    if (target.status === 'rejected') throw new Error('Cannot merge into rejected guidance');
+    if (!payload.reviewer.trim()) throw new Error('Reviewer is required');
+    await this.db.query(
+      `UPDATE lessons
+       SET status = 'rejected', merged_into_lesson_id = $1, reviewer = $2,
+           reviewer_user_id = $3, reviewed_at = $4
+       WHERE id = $5`,
+      [targetId, payload.reviewer.trim(), payload.reviewer_user_id ?? null, new Date().toISOString(), sourceId]
+    );
+    await this.db.query('DELETE FROM lesson_search_vectors WHERE lesson_id = $1', [sourceId]);
+    return this.require(sourceId);
+  }
+
   async delete(id: string): Promise<void> {
     const current = await this.require(id);
     if (current.status !== 'promoted') {
@@ -351,6 +370,7 @@ export class PostgresDBAdapter implements DBAdapter {
           reviewer_user_id text,
           reviewed_at timestamptz,
           promoted_at timestamptz,
+          merged_into_lesson_id text REFERENCES lessons(id),
           created_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE TABLE IF NOT EXISTS lesson_search_vectors (
@@ -363,6 +383,8 @@ export class PostgresDBAdapter implements DBAdapter {
           promoted_at timestamptz
         );
         ALTER TABLE lesson_search_vectors ALTER COLUMN promoted_at DROP NOT NULL;
+        ALTER TABLE lessons
+          ADD COLUMN IF NOT EXISTS merged_into_lesson_id text REFERENCES lessons(id);
         CREATE INDEX IF NOT EXISTS idx_traces_status ON traces(status);
         CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
         CREATE INDEX IF NOT EXISTS idx_lesson_search_embedding

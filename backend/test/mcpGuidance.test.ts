@@ -83,4 +83,12 @@ describe('MCP lesson guidance', () => {
     expect(prompt).toContain('remain silent');
     expect(prompt).toContain('one sentence');
   });
+
+  it('requires explicit human selection before merging duplicate evidence', () => {
+    const descriptions = toolDescriptions();
+
+    expect(descriptions.get('find_similar_lessons')).toContain('duplicate or conflict');
+    expect(descriptions.get('merge_lesson')).toContain('explicitly selects');
+    expect(descriptions.get('merge_lesson')).toContain('three fields remain unchanged');
+  });
 });

@@ -178,4 +178,96 @@ describe('services', () => {
     const result = await lessonService.checkGuidance({ task: 'Tune a bicycle brake' });
     expect(result).toEqual({ outcome: 'none', candidates: [] });
   });
+
+  it('merges a pending correction into existing guidance without changing its three fields', async () => {
+    const existingTrace = await traceService.capture({
+      submitted_by: 'Alex',
+      before_text: 'Send it soon.',
+      after_text: 'Send it by Friday.',
+    });
+    const existingDraft = await traceService.extract({
+      trace_id: existingTrace.id,
+      quote: 'soon',
+      what_changed: 'Use a concrete deadline.',
+      why_it_matters: 'Concrete deadlines make follow-up clear.',
+    });
+    const existing = await lessonService.promote(existingDraft.id, { reviewer: 'Morgan' });
+
+    const duplicateTrace = await traceService.capture({
+      submitted_by: 'Sam',
+      before_text: 'I will reply later.',
+      after_text: 'I will reply by Tuesday at noon.',
+    });
+    const duplicate = await traceService.extract({
+      trace_id: duplicateTrace.id,
+      quote: 'later',
+      what_changed: 'State the exact response deadline.',
+      why_it_matters: 'Concrete deadlines make follow-up clear.',
+    });
+    const original = {
+      quote: existing.quote,
+      what_changed: existing.what_changed,
+      why_it_matters: existing.why_it_matters,
+    };
+
+    const merged = await lessonService.merge(duplicate.id, existing.id, {
+      reviewer: 'Taylor',
+      reviewer_user_id: null,
+    });
+
+    expect(merged.status).toBe('rejected');
+    expect(merged.merged_into_lesson_id).toBe(existing.id);
+    expect(await lessonService.get(existing.id)).toMatchObject(original);
+    expect(await traceService.get(duplicate.trace_id)).toBeDefined();
+  });
+
+  it('rejects an invalid merge target', async () => {
+    const trace = await traceService.capture({
+      submitted_by: 'Alex',
+      before_text: 'Send it soon.',
+      after_text: 'Send it by Friday.',
+    });
+    const lesson = await traceService.extract({
+      trace_id: trace.id,
+      quote: 'soon',
+      what_changed: 'Use a concrete deadline.',
+      why_it_matters: 'Concrete deadlines make follow-up clear.',
+    });
+
+    await expect(lessonService.merge(lesson.id, lesson.id, {
+      reviewer: 'Morgan',
+      reviewer_user_id: null,
+    })).rejects.toThrow('cannot be merged into itself');
+  });
+
+  it('suggests similar guidance without returning the lesson under review', async () => {
+    const existingTrace = await traceService.capture({
+      submitted_by: 'Alex',
+      before_text: 'Send it soon.',
+      after_text: 'Send it by Friday.',
+    });
+    const existingDraft = await traceService.extract({
+      trace_id: existingTrace.id,
+      quote: 'soon',
+      what_changed: 'Use a concrete deadline.',
+      why_it_matters: 'Concrete deadlines make follow-up clear.',
+    });
+    const existing = await lessonService.promote(existingDraft.id, { reviewer: 'Morgan' });
+    const candidateTrace = await traceService.capture({
+      submitted_by: 'Sam',
+      before_text: 'I will reply later.',
+      after_text: 'I will reply by Tuesday.',
+    });
+    const candidate = await traceService.extract({
+      trace_id: candidateTrace.id,
+      quote: 'later',
+      what_changed: 'State the exact response deadline.',
+      why_it_matters: 'Concrete deadlines make follow-up clear.',
+    });
+
+    const similar = await lessonService.findSimilar(candidate.id, 5);
+
+    expect(similar.map((lesson) => lesson.id)).toContain(existing.id);
+    expect(similar.map((lesson) => lesson.id)).not.toContain(candidate.id);
+  });
 });

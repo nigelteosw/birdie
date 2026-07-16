@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { ftsAvailable, type SqliteDb } from '../db.js';
-import type { LessonEdit, LessonFilters, LessonWithTrace, NewExtraction, PromotePayload } from '../types.js';
+import type {
+  LessonEdit,
+  LessonFilters,
+  LessonWithTrace,
+  MergeLessonPayload,
+  NewExtraction,
+  PromotePayload,
+} from '../types.js';
 
 interface LessonRow extends Omit<LessonWithTrace, 'quote_verified'> {
   quote_verified: number;
@@ -140,6 +147,33 @@ export class LessonRepository {
       );
     this.syncFts(id, next.quote, next.what_changed, next.why_it_matters);
     return this.getById(id)!;
+  }
+
+  merge(sourceId: string, targetId: string, payload: MergeLessonPayload): LessonWithTrace {
+    const source = this.getById(sourceId);
+    const target = this.getById(targetId);
+    if (!source) throw new Error(`Lesson not found: ${sourceId}`);
+    if (!target) throw new Error(`Lesson not found: ${targetId}`);
+    if (sourceId === targetId) throw new Error('A lesson cannot be merged into itself');
+    if (source.status !== 'pending_review') throw new Error('Only pending lessons can be merged');
+    if (target.status === 'rejected') throw new Error('Cannot merge into rejected guidance');
+    if (!payload.reviewer.trim()) throw new Error('Reviewer is required');
+    this.db
+      .prepare(
+        `UPDATE lessons
+         SET status = 'rejected', merged_into_lesson_id = ?, reviewer = ?,
+             reviewer_user_id = ?, reviewed_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        targetId,
+        payload.reviewer.trim(),
+        payload.reviewer_user_id ?? null,
+        new Date().toISOString(),
+        sourceId
+      );
+    this.deleteFts(sourceId);
+    return this.getById(sourceId)!;
   }
 
   delete(id: string): void {

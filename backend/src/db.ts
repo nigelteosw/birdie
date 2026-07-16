@@ -57,6 +57,7 @@ function migrate(db: SqliteDb): void {
       reviewer_user_id TEXT REFERENCES user(id),
       reviewed_at TEXT,
       promoted_at TEXT,
+      merged_into_lesson_id TEXT REFERENCES lessons(id),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 
@@ -68,6 +69,7 @@ function migrate(db: SqliteDb): void {
   dropColumnsIfPresent(db, 'lessons', ['typology', 'playbook_alignment', 'playbook_note']);
   addColumnIfMissing(db, 'traces', 'submitted_by_user_id', 'TEXT REFERENCES user(id)');
   addColumnIfMissing(db, 'lessons', 'reviewer_user_id', 'TEXT REFERENCES user(id)');
+  addColumnIfMissing(db, 'lessons', 'merged_into_lesson_id', 'TEXT REFERENCES lessons(id)');
   setUpLessonsFts(db);
 }
 

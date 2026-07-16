@@ -27,6 +27,7 @@ const guidanceContextBody = z.object({
   workspace: z.string().trim().min(1).max(500).optional(),
   relevant_excerpt: z.string().trim().min(1).max(4000).optional(),
 });
+const mergeBody = z.object({ target_lesson_id: z.string().min(1) });
 
 export function lessonsRouter(ctx: AppContext): Router {
   const router = Router();
@@ -53,6 +54,27 @@ export function lessonsRouter(ctx: AppContext): Router {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
     try {
       res.json(await ctx.lessonService.checkGuidance(parsed.data));
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.get('/:id/similar', requireScope('birdie:read'), async (req, res) => {
+    try {
+      res.json(await ctx.lessonService.findSimilar(req.params.id, 5));
+    } catch (err) {
+      sendServiceError(res, err);
+    }
+  });
+
+  router.post('/:id/merge', requireScope('birdie:write'), async (req, res) => {
+    const parsed = mergeBody.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    try {
+      res.json(await ctx.lessonService.merge(req.params.id, parsed.data.target_lesson_id, {
+        reviewer: req.user!.name,
+        reviewer_user_id: req.user!.id,
+      }));
     } catch (err) {
       sendServiceError(res, err);
     }

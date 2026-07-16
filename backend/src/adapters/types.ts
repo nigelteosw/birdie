@@ -3,6 +3,7 @@ import type {
   LessonEdit,
   LessonFilters,
   LessonWithTrace,
+  MergeLessonPayload,
   NewExtraction,
   NewTrace,
   PromotePayload,
@@ -26,6 +27,7 @@ export interface LessonStore {
   list(filters: LessonFilters): Promise<LessonWithTrace[]>;
   edit(id: string, changes: LessonEdit & { quote_verified?: boolean }): Promise<LessonWithTrace>;
   promote(id: string, payload: PromotePayload & { quote_verified?: boolean }): Promise<LessonWithTrace>;
+  merge(sourceId: string, targetId: string, payload: MergeLessonPayload): Promise<LessonWithTrace>;
   delete(id: string): Promise<void>;
   streamPromoted(): AsyncIterable<LessonWithTrace>;
 }

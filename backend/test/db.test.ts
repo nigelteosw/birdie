@@ -67,6 +67,7 @@ describe('db migration', () => {
       (column) => column.name
     );
     expect(lessonColumns).toContain('reviewer_user_id');
+    expect(lessonColumns).toContain('merged_into_lesson_id');
     db.close();
   });
 

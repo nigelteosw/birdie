@@ -13,6 +13,7 @@ import type {
   LessonEdit,
   LessonFilters,
   LessonWithTrace,
+  MergeLessonPayload,
   NewExtraction,
   NewTrace,
   PromotePayload,
@@ -44,6 +45,9 @@ class SQLiteLessonStore implements LessonStore {
   }
   async promote(id: string, payload: PromotePayload & { quote_verified?: boolean }) {
     return this.repository.promote(id, payload);
+  }
+  async merge(sourceId: string, targetId: string, payload: MergeLessonPayload) {
+    return this.repository.merge(sourceId, targetId, payload);
   }
   async delete(id: string) { this.repository.delete(id); }
   async *streamPromoted(): AsyncIterable<LessonWithTrace> {

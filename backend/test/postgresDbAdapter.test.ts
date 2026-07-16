@@ -35,6 +35,22 @@ postgresDescribe('PostgresDBAdapter', () => {
 
       const results = await db.lessons.list({ status: 'promoted', q: 'liability cap', limit: 5 });
       expect(results.map((result) => result.id)).toEqual([lesson.id]);
+
+      const duplicateTrace = await db.traces.create({
+        submitted_by: 'Sam',
+        before_text: 'reply later',
+        after_text: 'reply by Tuesday',
+      });
+      const duplicate = await db.lessons.create({
+        trace_id: duplicateTrace.id,
+        quote: 'later',
+        quote_verified: true,
+        what_changed: 'Use a concrete response deadline.',
+        why_it_matters: 'Concrete deadlines make follow-up clear.',
+      });
+      const merged = await db.lessons.merge(duplicate.id, lesson.id, { reviewer: 'Taylor' });
+      expect(merged.merged_into_lesson_id).toBe(lesson.id);
+      expect(merged.status).toBe('rejected');
     } finally {
       await db.close();
       await admin.query(`DROP SCHEMA "${schema}" CASCADE`);

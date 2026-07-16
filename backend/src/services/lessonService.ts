@@ -6,6 +6,7 @@ import type {
   LessonEdit,
   LessonFilters,
   LessonWithTrace,
+  MergeLessonPayload,
   PromotePayload,
 } from '../types.js';
 
@@ -36,6 +37,37 @@ export class LessonService {
       limit: 5,
     });
     return { outcome: candidates.length > 0 ? 'available' : 'none', candidates };
+  }
+
+  async findSimilar(id: string, limit = 5): Promise<LessonWithTrace[]> {
+    const lesson = await this.get(id);
+    if (!lesson) throw new Error(`Lesson not found: ${id}`);
+    const matches = await this.db.lessons.list({
+      q: `${lesson.what_changed} ${lesson.why_it_matters}`,
+      limit: Math.min(Math.max(limit + 1, 2), 10),
+    });
+    return matches
+      .filter((candidate) =>
+        candidate.id !== id &&
+        candidate.status !== 'rejected' &&
+        !candidate.merged_into_lesson_id
+      )
+      .slice(0, limit);
+  }
+
+  merge(
+    sourceId: string,
+    targetId: string,
+    reviewer: MergeLessonPayload
+  ): Promise<LessonWithTrace> {
+    return this.db.transaction(async (session) => {
+      const source = await this.requireLesson(session, sourceId);
+      const target = await this.requireLesson(session, targetId);
+      if (source.id === target.id) throw new Error('A lesson cannot be merged into itself');
+      if (source.status !== 'pending_review') throw new Error('Only pending lessons can be merged');
+      if (target.status === 'rejected') throw new Error('Cannot merge into rejected guidance');
+      return session.lessons.merge(sourceId, targetId, reviewer);
+    });
   }
 
   async review(id: string, changes: LessonEdit): Promise<LessonWithTrace> {

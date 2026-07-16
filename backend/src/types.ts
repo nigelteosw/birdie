@@ -41,6 +41,7 @@ export interface Lesson {
   reviewer_user_id: string | null;
   reviewed_at: string | null;
   promoted_at: string | null;
+  merged_into_lesson_id: string | null;
   created_at: string;
 }
 
@@ -69,6 +70,11 @@ export interface PromotePayload {
   quote?: string;
   what_changed?: string;
   why_it_matters?: string;
+}
+
+export interface MergeLessonPayload {
+  reviewer: string;
+  reviewer_user_id?: string | null;
 }
 
 export interface LessonFilters {
