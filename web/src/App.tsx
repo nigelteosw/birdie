@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardCheck, Feather, Plus, Sparkles, Users } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Feather, Moon, Plus, Sparkles, Sun, Users } from 'lucide-react';
 import { useState } from 'react';
 import CaptureForm from './CaptureForm.js';
 import KnowledgeBase from './KnowledgeBase.js';
@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs.j
 import AccountMenu from './AccountMenu.js';
 import UserManagement from './UserManagement.js';
 import type { SessionUser } from './auth-client.js';
+import { applyTheme, getCurrentTheme } from './theme.js';
 
 type Tab = 'review' | 'mine' | 'knowledge' | 'users';
 
@@ -29,6 +30,13 @@ export default function App({ user }: { user: SessionUser }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [tab, setTab] = useState<Tab>('review');
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [theme, setTheme] = useState(getCurrentTheme);
+
+  function toggleTheme() {
+    const next = theme === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    setTheme(next);
+  }
 
   function handleCaptured() {
     setRefreshSignal((value) => value + 1);
@@ -57,6 +65,10 @@ export default function App({ user }: { user: SessionUser }) {
             <Plus size={17} />
             Capture example
           </Button>
+          <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label="Toggle color theme">
+            <Sun size={18} className="icon-sun" />
+            <Moon size={18} className="icon-moon" />
+          </button>
           <AccountMenu user={user} />
         </div>
       </header>
