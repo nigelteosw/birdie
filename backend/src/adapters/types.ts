@@ -14,6 +14,7 @@ import type {
 export interface TraceStore {
   create(input: NewTrace): Promise<Trace>;
   getById(id: string): Promise<Trace | undefined>;
+  getByIdempotencyKey(key: string): Promise<Trace | undefined>;
   list(status?: TraceStatus): Promise<Trace[]>;
   markExtracted(id: string): Promise<void>;
   markSkipped(id: string, reason: string): Promise<void>;

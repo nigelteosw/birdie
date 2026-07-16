@@ -2,11 +2,13 @@ import { Check, ChevronRight, FileEdit, RefreshCw, ShieldAlert, X } from 'lucide
 import { useEffect, useState } from 'react';
 import {
   findSimilarLessons,
+  getTrace,
   listLessons,
   mergeLesson,
   promoteLesson,
   reviewLesson,
   type Lesson,
+  type Trace,
 } from './api.js';
 import { Badge } from './components/ui/badge.js';
 import { Button } from './components/ui/button.js';
@@ -144,6 +146,8 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
                     {!lesson.quote_verified && <Badge variant="warning"><ShieldAlert size={13} /> Verify quote</Badge>}
                   </div>
 
+                  <SourceEvidence traceId={lesson.trace_id} />
+
                   {editing ? (
                     <div className="lesson-editor">
                       <EditableField label="What was initially wrong"><Textarea value={lesson.quote} rows={2} onChange={(event) => updateField(lesson.id, 'quote', event.target.value)} /></EditableField>
@@ -173,6 +177,30 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+function SourceEvidence({ traceId }: { traceId: string }) {
+  const [trace, setTrace] = useState<Trace | null>();
+
+  useEffect(() => {
+    getTrace(traceId).then(setTrace).catch(() => setTrace(null));
+  }, [traceId]);
+
+  if (trace === undefined) return <p className="source-evidence__status">Loading source evidence…</p>;
+  if (trace === null) return <p className="source-evidence__status">Source evidence could not be loaded.</p>;
+  return (
+    <aside className="source-evidence" aria-label="Source evidence">
+      <div>
+        <span>Original work</span>
+        <p>{trace.before_text}</p>
+      </div>
+      <div>
+        <span>Corrected work</span>
+        <p>{trace.after_text}</p>
+      </div>
+      {trace.context_note && <p className="source-evidence__context">Context: {trace.context_note}</p>}
+    </aside>
   );
 }
 

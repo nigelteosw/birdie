@@ -73,6 +73,12 @@ h1 { margin-bottom: 0; color: #10252a; font-family: Manrope, sans-serif; font-si
 .ui-badge--warning { border-color: #f0d89a; background: #fffae8; color: #8a620b; }
 .ui-badge--success { border-color: #c7e6dc; background: #eff9f5; color: #08715d; }
 .lesson-preview { display: grid; gap: 17px; }
+.source-evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border: 1px solid #d7e2e1; background: #f8fbfa; padding: 13px 14px; }
+.source-evidence > div { display: grid; align-content: start; gap: 5px; }
+.source-evidence span { color: #6a797e; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.source-evidence p { margin: 0; color: #405358; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.source-evidence__context { grid-column: 1 / -1; padding-top: 9px; border-top: 1px solid #dfe8e7; color: #68797d !important; }
+.source-evidence__status { margin: 0; color: #78868a; font-size: 12px; }
 .lesson-preview blockquote, .library-card__quote { position: relative; margin: 0; border-left: 3px solid #b9ddd4; color: #21353a; font-family: Manrope, sans-serif; font-size: 15px; font-weight: 600; letter-spacing: -.012em; line-height: 1.65; padding: 2px 0 2px 16px; }
 .lesson-preview__detail, .library-card__body > div { display: grid; gap: 5px; }
 .lesson-preview__detail span, .library-card__body span, .library-card__quote-block > span { color: #6a797e; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -203,6 +209,8 @@ h1 { margin-bottom: 0; color: #10252a; font-family: Manrope, sans-serif; font-si
   .section-intro__actions { width: 100%; }
   .section-intro__actions .ui-button { flex: 1; }
   .review-card__footer { grid-template-columns: 1fr; }
+  .source-evidence { grid-template-columns: 1fr; }
+  .source-evidence__context { grid-column: auto; }
   .user-create, .user-row { grid-template-columns: 1fr; }
   .user-actions { justify-content: flex-start; flex-wrap: wrap; }
   .account-popover { right: auto; left: 0; width: min(300px, calc(100vw - 28px)); }

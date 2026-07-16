@@ -35,6 +35,10 @@ export function captureTrace(input: NewTrace): Promise<Trace> {
   return post('/traces', input);
 }
 
+export function getTrace(id: string): Promise<Trace> {
+  return get(`/traces/${id}`);
+}
+
 export interface LessonFilters {
   status?: Lesson['status'];
   mine?: boolean;

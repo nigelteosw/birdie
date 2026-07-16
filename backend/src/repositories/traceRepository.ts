@@ -10,9 +10,9 @@ export class TraceRepository {
     this.db
       .prepare(
         `INSERT INTO traces (
-          id, submitted_by, submitted_by_user_id, before_text, after_text, context_note, source, status
+          id, submitted_by, submitted_by_user_id, before_text, after_text, context_note, source, idempotency_key, status
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, 'captured'
+          ?, ?, ?, ?, ?, ?, ?, ?, 'captured'
         )`
       )
       .run(
@@ -22,13 +22,18 @@ export class TraceRepository {
         input.before_text,
         input.after_text,
         input.context_note ?? null,
-        input.source ?? 'manual'
+        input.source ?? 'manual',
+        input.idempotency_key ?? null
       );
     return this.getById(id)!;
   }
 
   getById(id: string): Trace | undefined {
     return this.db.prepare('SELECT * FROM traces WHERE id = ?').get(id) as Trace | undefined;
+  }
+
+  getByIdempotencyKey(key: string): Trace | undefined {
+    return this.db.prepare('SELECT * FROM traces WHERE idempotency_key = ?').get(key) as Trace | undefined;
   }
 
   list(status?: TraceStatus): Trace[] {

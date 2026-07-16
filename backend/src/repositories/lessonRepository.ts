@@ -182,6 +182,7 @@ export class LessonRepository {
     if (current.status !== 'promoted') {
       throw new Error(`Lesson ${id} cannot be deleted from status '${current.status}'`);
     }
+    this.db.prepare('UPDATE lessons SET merged_into_lesson_id = NULL WHERE merged_into_lesson_id = ?').run(id);
     this.db.prepare('DELETE FROM lessons WHERE id = ?').run(id);
     this.deleteFts(id);
   }

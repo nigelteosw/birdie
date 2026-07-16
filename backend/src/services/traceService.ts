@@ -9,20 +9,28 @@ export class TraceService {
     return this.db.traces.create(input);
   }
 
-  captureCorrection(input: NewCorrection): Promise<LessonWithTrace> {
-    return this.db.transaction(async (session) => {
-      const { quote, what_changed, why_it_matters, ...traceInput } = input;
-      const trace = await session.traces.create(traceInput);
-      const lesson = await session.lessons.create({
-        trace_id: trace.id,
-        quote,
-        what_changed,
-        why_it_matters,
-        quote_verified: verifyQuote(quote, trace.before_text),
+  async captureCorrection(input: NewCorrection): Promise<LessonWithTrace> {
+    const existing = await this.findCorrectionByIdempotencyKey(input);
+    if (existing) return existing;
+    try {
+      return await this.db.transaction(async (session) => {
+        const { quote, what_changed, why_it_matters, ...traceInput } = input;
+        const trace = await session.traces.create(traceInput);
+        const lesson = await session.lessons.create({
+          trace_id: trace.id,
+          quote,
+          what_changed,
+          why_it_matters,
+          quote_verified: verifyQuote(quote, trace.before_text),
+        });
+        await session.traces.markExtracted(trace.id);
+        return lesson;
       });
-      await session.traces.markExtracted(trace.id);
-      return lesson;
-    });
+    } catch (error) {
+      const retry = await this.findCorrectionByIdempotencyKey(input);
+      if (retry) return retry;
+      throw error;
+    }
   }
 
   get(id: string): Promise<Trace | undefined> {
@@ -64,5 +72,25 @@ export class TraceService {
     const trace = await traces.getById(id);
     if (!trace) throw new Error(`Trace not found: ${id}`);
     return trace;
+  }
+
+  private async findCorrectionByIdempotencyKey(input: NewCorrection): Promise<LessonWithTrace | undefined> {
+    const trace = await this.db.traces.getByIdempotencyKey(input.idempotency_key);
+    if (!trace) return undefined;
+    const lesson = await this.db.lessons.getByTraceId(trace.id);
+    const matches = lesson &&
+      trace.submitted_by === input.submitted_by &&
+      trace.submitted_by_user_id === (input.submitted_by_user_id ?? null) &&
+      trace.before_text === input.before_text &&
+      trace.after_text === input.after_text &&
+      trace.context_note === (input.context_note ?? null) &&
+      trace.source === (input.source ?? 'manual') &&
+      lesson.quote === input.quote &&
+      lesson.what_changed === input.what_changed &&
+      lesson.why_it_matters === input.why_it_matters;
+    if (!matches) {
+      throw new Error('Idempotency key was already used for different correction evidence');
+    }
+    return lesson;
   }
 }

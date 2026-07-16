@@ -13,6 +13,7 @@ const captureTraceParams = z.object({
   context_note: z.string().optional(),
 });
 const captureCorrectionParams = captureTraceParams.extend({
+  idempotency_key: z.string().trim().min(8).max(200),
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),
@@ -102,7 +103,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'capture_correction',
-    description: 'Capture grounded before_text and after_text plus the three-part lesson in the same turn. Copy quote from before_text, use what_changed for what to do instead, and use why_it_matters for the transferable significance. The result stays pending_review.',
+    description: 'Capture grounded before_text and after_text plus the three-part lesson in the same turn. Supply a stable unique idempotency_key and reuse it on retries. Copy quote from before_text, use what_changed for what to do instead, and use why_it_matters for the transferable significance. The result stays pending_review.',
     parameters: captureCorrectionParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {

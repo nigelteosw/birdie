@@ -39,6 +39,7 @@ describe('services', () => {
 
   it('captures correction evidence and its pending three-part lesson atomically', async () => {
     const lesson = await traceService.captureCorrection({
+      idempotency_key: 'correction-alex-friday-deadline',
       submitted_by: 'Alex',
       submitted_by_user_id: null,
       before_text: 'Send the update when you can.',
@@ -51,6 +52,44 @@ describe('services', () => {
     expect(lesson.status).toBe('pending_review');
     expect(lesson.quote_verified).toBe(true);
     expect((await traceService.get(lesson.trace_id))?.status).toBe('extracted');
+  });
+
+  it('returns the same correction lesson when a capture is retried', async () => {
+    const correction = {
+      idempotency_key: 'correction-alex-retry-deadline',
+      submitted_by: 'Alex',
+      submitted_by_user_id: 'user-alex',
+      before_text: 'Send the update when you can.',
+      after_text: 'Send the update by Friday at 3pm.',
+      quote: 'when you can',
+      what_changed: 'Give the recipient a concrete deadline.',
+      why_it_matters: 'A concrete deadline makes ownership and follow-up unambiguous.',
+    };
+
+    const first = await traceService.captureCorrection(correction);
+    const retry = await traceService.captureCorrection(correction);
+
+    expect(retry.id).toBe(first.id);
+    expect(retry.trace_id).toBe(first.trace_id);
+    expect(await traceService.list()).toHaveLength(1);
+  });
+
+  it('rejects reuse of an idempotency key for different correction evidence', async () => {
+    const correction = {
+      idempotency_key: 'correction-alex-conflicting-retry',
+      submitted_by: 'Alex',
+      before_text: 'Send it soon.',
+      after_text: 'Send it Friday.',
+      quote: 'soon',
+      what_changed: 'Use a deadline.',
+      why_it_matters: 'Deadlines clarify ownership.',
+    };
+    await traceService.captureCorrection(correction);
+
+    await expect(traceService.captureCorrection({
+      ...correction,
+      after_text: 'Send it Monday.',
+    })).rejects.toThrow('Idempotency key was already used for different correction evidence');
   });
 
   it('rechecks quote verification on edit and blocks ungrounded promotion', async () => {
@@ -238,6 +277,41 @@ describe('services', () => {
       reviewer: 'Morgan',
       reviewer_user_id: null,
     })).rejects.toThrow('cannot be merged into itself');
+  });
+
+  it('detaches merged evidence before deleting its promoted target', async () => {
+    const targetTrace = await traceService.capture({
+      submitted_by: 'Alex',
+      before_text: 'Send it soon.',
+      after_text: 'Send it Friday.',
+    });
+    const targetDraft = await traceService.extract({
+      trace_id: targetTrace.id,
+      quote: 'soon',
+      what_changed: 'Use a deadline.',
+      why_it_matters: 'Deadlines clarify ownership.',
+    });
+    const target = await lessonService.promote(targetDraft.id, { reviewer: 'Morgan' });
+    const evidenceTrace = await traceService.capture({
+      submitted_by: 'Sam',
+      before_text: 'Reply later.',
+      after_text: 'Reply Tuesday.',
+    });
+    const evidence = await traceService.extract({
+      trace_id: evidenceTrace.id,
+      quote: 'later',
+      what_changed: 'Use a deadline.',
+      why_it_matters: 'Deadlines clarify ownership.',
+    });
+    await lessonService.merge(evidence.id, target.id, { reviewer: 'Taylor' });
+
+    await lessonService.delete(target.id);
+
+    expect(await lessonService.get(target.id)).toBeUndefined();
+    expect(await lessonService.get(evidence.id)).toMatchObject({
+      status: 'rejected',
+      merged_into_lesson_id: null,
+    });
   });
 
   it('suggests similar guidance without returning the lesson under review', async () => {

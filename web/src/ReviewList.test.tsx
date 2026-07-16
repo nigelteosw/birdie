@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api.js';
@@ -8,6 +8,7 @@ import ReviewList from './ReviewList.js';
 
 vi.mock('./api.js', () => ({
   findSimilarLessons: vi.fn(),
+  getTrace: vi.fn(),
   listLessons: vi.fn(),
   mergeLesson: vi.fn(),
   promoteLesson: vi.fn(),
@@ -51,6 +52,17 @@ afterEach(() => {
 describe('ReviewList', () => {
   it('edits the three approved fields and merges only after an explicit choice', async () => {
     vi.mocked(api.listLessons).mockResolvedValue([candidate]);
+    vi.mocked(api.getTrace).mockResolvedValue({
+      id: candidate.trace_id,
+      submitted_by: candidate.submitted_by,
+      submitted_by_user_id: candidate.submitted_by_user_id,
+      before_text: 'Send it soon.',
+      after_text: 'Send it by Friday at 3pm.',
+      context_note: 'Client status update',
+      status: 'extracted',
+      skip_reason: null,
+      created_at: candidate.created_at,
+    });
     vi.mocked(api.findSimilarLessons).mockResolvedValue([existing]);
     vi.mocked(api.mergeLesson).mockResolvedValue({
       ...candidate,
@@ -61,6 +73,9 @@ describe('ReviewList', () => {
     render(<ReviewList refreshSignal={0} onCapture={() => undefined} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const evidence = await screen.findByRole('complementary', { name: 'Source evidence' });
+    expect(within(evidence).getByText('Send it soon.')).toBeInTheDocument();
+    expect(within(evidence).getByText('Send it by Friday at 3pm.')).toBeInTheDocument();
     expect(screen.getByLabelText('What was initially wrong')).toBeInTheDocument();
     expect(screen.getByLabelText('What to do instead')).toBeInTheDocument();
     expect(screen.getByLabelText('Why it matters')).toBeInTheDocument();

@@ -11,6 +11,7 @@ export interface Trace {
   source: string;
   status: TraceStatus;
   skip_reason: string | null;
+  idempotency_key: string | null;
   created_at: string;
 }
 
@@ -21,9 +22,11 @@ export interface NewTrace {
   after_text: string;
   context_note?: string | null;
   source?: string;
+  idempotency_key?: string | null;
 }
 
 export interface NewCorrection extends NewTrace {
+  idempotency_key: string;
   quote: string;
   what_changed: string;
   why_it_matters: string;

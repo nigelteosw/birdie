@@ -25,6 +25,7 @@ class SQLiteTraceStore implements TraceStore {
 
   async create(input: NewTrace) { return this.repository.create(input); }
   async getById(id: string) { return this.repository.getById(id); }
+  async getByIdempotencyKey(key: string) { return this.repository.getByIdempotencyKey(key); }
   async list(status?: TraceStatus) { return this.repository.list(status); }
   async markExtracted(id: string) { this.repository.markExtracted(id); }
   async markSkipped(id: string, reason: string) { this.repository.markSkipped(id, reason); }

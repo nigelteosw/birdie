@@ -53,8 +53,8 @@ class PostgresTraceStore implements TraceStore {
   async create(input: NewTrace): Promise<Trace> {
     const result = await this.db.query<TraceRow>(
       `INSERT INTO traces (
-         id, submitted_by, submitted_by_user_id, before_text, after_text, context_note, source, status
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'captured')
+         id, submitted_by, submitted_by_user_id, before_text, after_text, context_note, source, idempotency_key, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'captured')
        RETURNING *`,
       [
         randomUUID(),
@@ -64,6 +64,7 @@ class PostgresTraceStore implements TraceStore {
         input.after_text,
         input.context_note ?? null,
         input.source ?? 'manual',
+        input.idempotency_key ?? null,
       ]
     );
     return rowToTrace(result.rows[0]);
@@ -71,6 +72,11 @@ class PostgresTraceStore implements TraceStore {
 
   async getById(id: string): Promise<Trace | undefined> {
     const result = await this.db.query<TraceRow>('SELECT * FROM traces WHERE id = $1', [id]);
+    return result.rows[0] ? rowToTrace(result.rows[0]) : undefined;
+  }
+
+  async getByIdempotencyKey(key: string): Promise<Trace | undefined> {
+    const result = await this.db.query<TraceRow>('SELECT * FROM traces WHERE idempotency_key = $1', [key]);
     return result.rows[0] ? rowToTrace(result.rows[0]) : undefined;
   }
 
@@ -229,6 +235,7 @@ class PostgresLessonStore implements LessonStore {
     if (current.status !== 'promoted') {
       throw new Error(`Lesson ${id} cannot be deleted from status '${current.status}'`);
     }
+    await this.db.query('UPDATE lessons SET merged_into_lesson_id = NULL WHERE merged_into_lesson_id = $1', [id]);
     await this.db.query('DELETE FROM lessons WHERE id = $1', [id]);
   }
 
@@ -356,6 +363,7 @@ export class PostgresDBAdapter implements DBAdapter {
           source text NOT NULL DEFAULT 'manual',
           status text NOT NULL DEFAULT 'captured',
           skip_reason text,
+          idempotency_key text,
           created_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE TABLE IF NOT EXISTS lessons (
@@ -385,6 +393,10 @@ export class PostgresDBAdapter implements DBAdapter {
         ALTER TABLE lesson_search_vectors ALTER COLUMN promoted_at DROP NOT NULL;
         ALTER TABLE lessons
           ADD COLUMN IF NOT EXISTS merged_into_lesson_id text REFERENCES lessons(id);
+        ALTER TABLE traces
+          ADD COLUMN IF NOT EXISTS idempotency_key text;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_traces_idempotency_key
+          ON traces(idempotency_key) WHERE idempotency_key IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_traces_status ON traces(status);
         CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
         CREATE INDEX IF NOT EXISTS idx_lesson_search_embedding

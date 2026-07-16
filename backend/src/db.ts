@@ -42,6 +42,7 @@ function migrate(db: SqliteDb): void {
       source TEXT NOT NULL DEFAULT 'manual',
       status TEXT NOT NULL DEFAULT 'captured',
       skip_reason TEXT,
+      idempotency_key TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 
@@ -68,8 +69,11 @@ function migrate(db: SqliteDb): void {
   dropColumnsIfPresent(db, 'traces', ['submitted_by_role', 'junior_name', 'senior_name', 'playbook_ref', 'playbook_text']);
   dropColumnsIfPresent(db, 'lessons', ['typology', 'playbook_alignment', 'playbook_note']);
   addColumnIfMissing(db, 'traces', 'submitted_by_user_id', 'TEXT REFERENCES user(id)');
+  addColumnIfMissing(db, 'traces', 'idempotency_key', 'TEXT');
   addColumnIfMissing(db, 'lessons', 'reviewer_user_id', 'TEXT REFERENCES user(id)');
   addColumnIfMissing(db, 'lessons', 'merged_into_lesson_id', 'TEXT REFERENCES lessons(id)');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_traces_idempotency_key ON traces(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;`);
   setUpLessonsFts(db);
 }
 

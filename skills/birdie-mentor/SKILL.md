@@ -29,7 +29,7 @@ For every qualifying correction, complete this sequence in the same turn:
    - **What was initially wrong** (`quote`): use `before_text` verbatim when it is already concise; otherwise choose the smallest exact contiguous excerpt from before_text that preserves the lesson. Never quote `after_text` or paraphrase.
    - **What to do instead** (`what_changed`): state the corrected action plainly.
    - **Why it matters** (`why_it_matters`): explain the transferable significance, including a boundary only when needed to prevent misuse.
-3. Call `capture_correction` once with the evidence and all three fields.
+3. Create a stable unique `idempotency_key` for this correction event, then call `capture_correction` once with that key, the evidence, and all three fields. Reuse the same key if the call must be retried; never generate a new key for a retry.
 4. Inspect the result. It must remain `pending_review` and return `quote_verified: true`.
 5. If `quote_verified` is false, call `review_lesson` with a corrected exact quote from `before_text`. If it still fails, leave it pending and report the verification problem.
 6. On success, say one short sentence: `Saved a pending Birdie lesson: <what_changed>. It still needs review.`

@@ -9,6 +9,7 @@ const createTraceBody = z.object({
   context_note: z.string().optional(),
 });
 const captureCorrectionBody = createTraceBody.extend({
+  idempotency_key: z.string().trim().min(8).max(200),
   quote: z.string().min(1),
   what_changed: z.string().min(1),
   why_it_matters: z.string().min(1),

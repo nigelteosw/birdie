@@ -17,6 +17,8 @@ describe('birdie-mentor skill contract', () => {
   it('captures a verified three-part pending lesson in the same turn', () => {
     expect(skill).toContain('same turn');
     expect(skill).toContain('capture_correction');
+    expect(skill).toContain('idempotency_key');
+    expect(skill).toContain('Reuse the same key');
     expect(skill).toContain('What was initially wrong');
     expect(skill).toContain('What to do instead');
     expect(skill).toContain('Why it matters');

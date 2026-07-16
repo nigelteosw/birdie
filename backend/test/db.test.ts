@@ -43,6 +43,7 @@ describe('db migration', () => {
     expect(columns).not.toContain('junior_name');
     expect(columns).not.toContain('senior_name');
     expect(columns).toContain('submitted_by_user_id');
+    expect(columns).toContain('idempotency_key');
 
     db.prepare(
       `INSERT INTO traces (id, submitted_by, before_text, after_text) VALUES ('trace-2', 'Jane', 'before2', 'after2')`
@@ -63,6 +64,7 @@ describe('db migration', () => {
     expect(columns).not.toContain('senior_name');
     expect(columns).toContain('submitted_by');
     expect(columns).toContain('submitted_by_user_id');
+    expect(columns).toContain('idempotency_key');
     const lessonColumns = (db.prepare('PRAGMA table_info(lessons)').all() as Array<{ name: string }>).map(
       (column) => column.name
     );
