@@ -26,6 +26,14 @@ export default function ReviewList({ refreshSignal, onCapture }: Props) {
     refresh().catch((err) => setMessage(`Could not load the queue: ${(err as Error).message}`));
   }, [refreshSignal]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (editingId) return;
+      refresh().catch((err) => setMessage(`Could not load the queue: ${(err as Error).message}`));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [editingId]);
+
   async function handleSaveDraft(lesson: Lesson) {
     await act(lesson.id, async () => {
       await reviewLesson(lesson.id, editableFields(lesson));
