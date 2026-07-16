@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Birdie turns reviewed before/after edits into authenticated, shared team guidance." />
+    <meta name="description" content="Birdie turns real corrections into reviewed guidance so teams stop repeating the same feedback." />
     <title>Birdie Docs</title>
     <link rel="icon" href="assets/birdie-mascot.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -85,8 +85,8 @@
         <article id="content">
           <div id="top">
             <p class="eyebrow">Get started</p>
-            <h1>Introduction to Birdie</h1>
-            <p class="lede">Birdie combines a signed-in review workspace with an OAuth-authenticated remote MCP server. Every capture and promotion is tied to the same user account.</p>
+            <h1>Stop giving the same correction twice.</h1>
+            <p class="lede">Birdie turns real feedback into reviewed guidance that appears when similar work returns. Everyone can contribute and everyone can learn.</p>
             <button class="copy-page" type="button" data-copy-page>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               Copy page
@@ -97,9 +97,9 @@
           <section aria-labelledby="what-birdie-does">
             <h2 id="what-birdie-does">How Birdie works</h2>
             <ol class="steps-list">
-              <li><strong>Authenticate once.</strong> Use email/password in the web UI and OAuth Authorization Code + PKCE from MCP clients.</li>
-              <li><strong>Review deliberately.</strong> Validate quotes, edit candidate lessons, and promote only guidance the team trusts.</li>
-              <li><strong>Reuse experience.</strong> Search promoted examples from chat or browse them in the signed-in knowledge base.</li>
+              <li><strong>Notice real corrections.</strong> A connected work tool captures meaningful before/after feedback without asking someone to author a playbook.</li>
+              <li><strong>Review three simple fields.</strong> Edit what was initially wrong, what to do instead, and why it matters.</li>
+              <li><strong>Bring guidance back.</strong> Check approved lessons against current work and stay silent when the match is weak.</li>
             </ol>
           </section>
 
@@ -133,12 +133,12 @@ DB_PATH=/data/birdie.db</code></pre>
           <section id="workflow" aria-labelledby="workflow-heading">
             <p class="eyebrow">Guides</p>
             <h2 id="workflow-heading">Workflow</h2>
-            <p>Grounded experience, with a human gate.</p>
+            <p>Real correction, simple lesson, human gate.</p>
             <ol class="workflow-list">
-              <li><h3>Capture</h3><p>The signed-in user records a before/after example in chat or the web UI.</p></li>
-              <li><h3>Extract</h3><p>The MCP host proposes a quote, change, and rationale; Birdie verifies the quote.</p></li>
-              <li><h3>Review</h3><p>An authenticated reviewer edits, rejects, or promotes the candidate lesson.</p></li>
-              <li><h3>Retrieve</h3><p>Assistants search the promoted pool and synthesize only from returned lesson cards.</p></li>
+              <li><h3>Capture</h3><p>The connected agent records genuine original and corrected work as source evidence.</p></li>
+              <li><h3>Draft</h3><p>The agent proposes what was initially wrong, what to do instead, and why it matters. Birdie verifies the quote.</p></li>
+              <li><h3>Review</h3><p>Any permitted teammate can edit all three fields, reject, merge, or explicitly promote the lesson.</p></li>
+              <li><h3>Guide</h3><p>Assistants check promoted lessons during similar work, explain direct matches, and remain silent otherwise.</p></li>
             </ol>
           </section>
 
@@ -161,7 +161,7 @@ DB_PATH=/data/birdie.db</code></pre>
                   </tr>
                   <tr>
                     <th scope="row">MCP</th>
-                    <td><code>POST /mcp</code> <code>capture_trace</code> <code>save_extraction</code> <code>promote_lesson</code> <code>ask_lesson</code></td>
+                    <td><code>POST /mcp</code> <code>capture_correction</code> <code>check_guidance</code> <code>merge_lesson</code> <code>promote_lesson</code> <code>ask_lesson</code></td>
                   </tr>
                 </tbody>
               </table>
@@ -178,7 +178,7 @@ bun test</code></pre>
           </section>
 
           <footer class="page-footer">
-            <p>Birdie stores and retrieves mentorship examples. The connected MCP host does the reasoning.</p>
+            <p>Birdie preserves reviewed experience. MCP is one way connected work tools capture and deliver it.</p>
             <a href="https://github.com/nigelteosw/birdie">GitHub repository</a>
           </footer>
         </article>

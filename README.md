@@ -2,7 +2,15 @@
 
 # Birdie
 
-Birdie turns real before/after edits into reviewed team lessons. It provides one hosted web UI, authenticated REST API, and OAuth 2.1 remote MCP endpoint. The connected MCP host does the reasoning; Birdie stores, validates, reviews, and retrieves the shared data.
+Birdie helps teams stop giving the same correction twice. It turns real before/after feedback into a simple, reviewed lesson:
+
+1. **What was initially wrong.**
+2. **What to do instead.**
+3. **Why it matters.**
+
+The connected work tool detects and drafts useful lessons. People review what becomes shared guidance, and Birdie brings approved lessons back when similar work appears. Everyone can contribute and everyone can learn; Birdie has no mentor/learner hierarchy.
+
+Birdie provides one hosted web UI, authenticated REST API, and OAuth 2.1 remote MCP endpoint. The connected client supplies the language-model judgment; Birdie preserves source evidence, verifies quotes, enforces review state, detects repeated guidance, and retrieves candidates for current work. MCP is one supported capture and delivery adapter, not the product's defining value.
 
 The same account works in the browser and through MCP. On first start, Birdie creates the configured admin user. That admin can create other users, issue temporary passwords, revoke sessions, and disable accounts from the web UI.
 
@@ -37,7 +45,7 @@ http://localhost:6677/mcp
 
 For a deployed instance, use its public HTTPS origin, for example `https://birdie.example.com/mcp`. The client discovers Birdie's OAuth metadata, opens the same web sign-in and consent flow, and returns with a resource-bound token. Captures and promotions are attributed to that signed-in account.
 
-The Claude plugin in this repository is skill-only: it adds proactive capture and retrieval behavior. Configure the `/mcp` connection separately in your client.
+The Claude plugin in this repository is skill-only: it adds proactive correction capture and contextual guidance checks. Configure the `/mcp` connection separately in your client.
 
 ## Local development
 

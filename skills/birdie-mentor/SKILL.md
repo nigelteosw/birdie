@@ -6,6 +6,7 @@ description: Use when a conversation contains a clearly reusable before/after co
 # Birdie Mentor
 
 Birdie turns real corrections into reviewed team guidance. Use the connected `birdie` MCP tools directly.
+Everyone can contribute and everyone can learn; Birdie does not assign mentor or learner roles.
 
 ## First use
 
@@ -37,7 +38,7 @@ If capture fails, report it and stop; never invent a trace ID or claim anything 
 
 ## Human review boundary
 
-Never call `promote_lesson` without explicit user approval of that lesson. Before promotion, remove client names, matter names, secrets, and unsafe details. Use `review_lesson` when the user asks to edit, defer, or reject a candidate. Call `open_review_queue` only when the user asks to review lessons or open the queue.
+Never call `promote_lesson` without explicit user approval of that lesson. Before promotion, remove private names, project details, secrets, and unsafe content. Use `review_lesson` when the user asks to edit, defer, or reject a candidate. Call `open_review_queue` only when the user asks to review lessons or open the queue.
 
 ## Proactive retrieval
 

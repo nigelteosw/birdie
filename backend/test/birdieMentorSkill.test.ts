@@ -7,6 +7,7 @@ const skill = readFileSync(skillPath, 'utf8');
 
 describe('birdie-mentor skill contract', () => {
   it('triggers on reusable corrections without requiring names', () => {
+    expect(skill).toContain('Everyone can contribute and everyone can learn');
     expect(skill).toContain('regardless of whether anyone is named');
     expect(skill).toContain('original and corrected content are both visible');
     expect(skill).toContain('reason can guide similar future work');
