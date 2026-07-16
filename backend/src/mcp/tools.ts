@@ -89,7 +89,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'capture_trace',
-    description: 'Capture a clearly reusable before/after correction only when both original and corrected content are visible in the conversation. Never invent either side. Do not capture typo-only, formatting-only, subjective, one-off, or unsafe-to-store edits. Use verbatim original and corrected text, then extract a pending lesson in the same turn.',
+    description: `Capture a clearly reusable before/after correction only when both original and corrected content are visible in the conversation. ${copy.captureBoundaries} Use verbatim original and corrected text, then extract a pending lesson in the same turn.`,
     parameters: captureTraceParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {
@@ -103,7 +103,7 @@ export function registerTools(server: FastMCP<McpSession>, ctx: AppContext, base
   });
   server.addTool({
     name: 'capture_correction',
-    description: 'Capture grounded before_text and after_text plus the three-part lesson in the same turn. Supply a stable unique idempotency_key and reuse it on retries. Copy quote from before_text, use what_changed for what to do instead, and use why_it_matters for the transferable significance. The result stays pending_review.',
+    description: `Capture grounded before_text and after_text plus the three-part lesson in the same turn, only when both original and corrected content are visible in the conversation. ${copy.captureBoundaries} Supply a stable unique idempotency_key and reuse it on retries. Copy quote from before_text, use what_changed for what to do instead, and use why_it_matters for the transferable significance. The result stays pending_review.`,
     parameters: captureCorrectionParams,
     canAccess: hasScope('birdie:write'),
     execute: async (args, request) => {

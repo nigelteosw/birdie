@@ -201,6 +201,20 @@ export class LessonRepository {
   }
 }
 
+// Common English function words. Left in the keyword set, a query built from
+// prose (e.g. a task description passed to check_guidance) would OR-match
+// almost any lesson on words like "a" or "the" instead of on its actual
+// subject matter.
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'else', 'of', 'to', 'in', 'on', 'for',
+  'with', 'as', 'by', 'at', 'from', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it',
+  'its', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'we', 'they', 'my', 'your',
+  'his', 'her', 'our', 'their', 'do', 'does', 'did', 'not', 'no', 'so', 'than', 'too', 'very',
+  'can', 'will', 'just', 'into', 'about', 'over', 'under', 'again', 'once', 'here', 'there',
+  'when', 'where', 'why', 'how', 'all', 'each', 'both', 'few', 'more', 'most', 'other', 'some',
+  'such', 'only', 'own', 'same', 'up', 'down', 'out',
+]);
+
 function lessonSelect(usesFts = false): string {
   return `SELECT l.*, t.submitted_by, t.submitted_by_user_id
           FROM lessons l
@@ -223,7 +237,8 @@ function filterWhere(filters: LessonFilters, ftsAvailable: boolean): { where: st
     const keywords = filters.q
       .toLowerCase()
       .split(/\W+/)
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((keyword) => !STOPWORDS.has(keyword));
     if (keywords.length > 0) {
       if (ftsAvailable) {
         // FTS5 tokenizes on word boundaries, so quoting each keyword treats it

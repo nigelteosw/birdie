@@ -102,6 +102,20 @@ describe('LessonRepository filters', () => {
     expect(results.map((lesson) => lesson.submitted_by).sort()).toEqual(['Amir', 'Jane']);
   });
 
+  it('ignores common stopwords so a prose query does not match on function words alone', () => {
+    createPromotedLesson('Jane', 'uncapped indemnity', 'Capped it.', 'Risk control.');
+
+    // Every word here except "sql", "migration", "column", and "table" is a
+    // stopword. None of those four appear in the lesson above, so an
+    // unfiltered OR search that treats "a", "that", "to", and "the" as
+    // search terms would incorrectly match it.
+    const results = lessons.list({
+      status: 'promoted',
+      q: 'Write a SQL migration that adds a column to the table',
+    });
+    expect(results).toHaveLength(0);
+  });
+
   it('bounds unpaginated lists and honours an explicit limit', () => {
     for (let index = 0; index < 101; index += 1) {
       createPromotedLesson(`Person ${index}`, `term ${index}`, 'Changed it.', 'Reason.');

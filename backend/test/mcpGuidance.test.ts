@@ -70,6 +70,18 @@ describe('MCP lesson guidance', () => {
     expect(captureTrace).toContain('unsafe-to-store');
   });
 
+  it('applies the same capture boundaries to the one-call capture_correction tool', () => {
+    const captureCorrection = toolDescriptions().get('capture_correction');
+
+    expect(captureCorrection).toContain('both original and corrected content are visible');
+    expect(captureCorrection).toContain('Never invent either side');
+    expect(captureCorrection).toContain('typo-only');
+    expect(captureCorrection).toContain('formatting-only');
+    expect(captureCorrection).toContain('subjective');
+    expect(captureCorrection).toContain('one-off');
+    expect(captureCorrection).toContain('unsafe-to-store');
+  });
+
   it('treats contextual retrieval as a shortlist rather than permission to interrupt', () => {
     const descriptions = toolDescriptions();
     const prompt = buildCheckGuidancePrompt({
